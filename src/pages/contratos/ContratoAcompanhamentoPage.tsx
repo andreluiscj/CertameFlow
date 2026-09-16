@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ComprovanteParcela } from '@/components/contratos/ComprovanteParcela';
 import { ArrowLeft, Activity, AlertTriangle, CheckCircle2, MapPin } from 'lucide-react';
 import {
   useContrato,
@@ -116,6 +117,7 @@ export default function ContratoAcompanhamentoPage() {
                     <TableHead className="w-48">Status</TableHead>
                     <TableHead className="w-16 text-center">Pago</TableHead>
                     <TableHead className="w-44">Pago em</TableHead>
+                    <TableHead className="w-56">Comprovante</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -156,7 +158,7 @@ export default function ContratoAcompanhamentoPage() {
                                 id: p.id,
                                 pago: v,
                                 data_pagamento_efetivo: v
-                                  ? p.data_pagamento_efetivo ?? new Date().toISOString().slice(0, 10)
+                                  ? p.data_pagamento_efetivo ?? format(new Date(), 'yyyy-MM-dd')
                                   : null,
                               })
                             }
@@ -173,6 +175,9 @@ export default function ContratoAcompanhamentoPage() {
                               })
                             }
                           />
+                        </TableCell>
+                        <TableCell>
+                          <ComprovanteParcela parcela={p} />
                         </TableCell>
                       </TableRow>
                     );

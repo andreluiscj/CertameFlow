@@ -14,6 +14,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { RequireLevel } from "@/components/RequireLevel";
 import ModuleSelectPage from "./pages/ModuleSelectPage";
 
+const AdministracaoPage = lazy(() => import("./pages/AdministracaoPage"));
 const Index = lazy(() => import("./pages/Index"));
 const ConcursosPage = lazy(() => import("./pages/ConcursosPage"));
 const ConcursosFinalizadosPage = lazy(() => import("./pages/ConcursosFinalizadosPage"));
@@ -108,6 +109,10 @@ function App() {
                 <Suspense fallback={<RouteFallback />}>
                   <Routes>
                     <Route path="/" element={<ProtectedRoute><ModuleSelectPage /></ProtectedRoute>} />
+                    <Route
+                      path="/administracao"
+                      element={<ProtectedRoute><RequireLevel adminOnly><AdministracaoPage /></RequireLevel></ProtectedRoute>}
+                    />
                     <Route path="/concursos/dashboard" element={concursos(<Index />)} />
                     <Route path="/concursos" element={concursos(<ConcursosPage />)} />
                     <Route path="/concursos/finalizados" element={concursos(<ConcursosFinalizadosPage />)} />

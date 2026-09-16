@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Usuario } from '@/types/database';
 
-export type UserProfile = Pick<Usuario, 'id' | 'nome' | 'email' | 'setor' | 'nivel_acesso'>;
+export type UserProfile = Pick<Usuario, 'id' | 'nome' | 'email' | 'setor' | 'nivel_acesso' | 'modulos'>;
 
 export function useUserProfile() {
   const { user } = useAuth();
@@ -14,7 +14,7 @@ export function useUserProfile() {
       if (!user?.id) return null;
       const { data, error } = await supabase
         .from('usuarios')
-        .select('id, nome, email, setor, nivel_acesso')
+        .select('id, nome, email, setor, nivel_acesso, modulos')
         .eq('id', user.id)
         .maybeSingle();
       if (error) throw error;

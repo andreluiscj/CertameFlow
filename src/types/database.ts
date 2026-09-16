@@ -58,6 +58,9 @@ export interface Database {
           hora: string | null;
           cor: string | null;
           concluido: boolean;
+          concluido_por: string | null;
+          concluido_por_nome: string | null;
+          concluido_em: string | null;
           created_at: string;
         };
         Insert: {
@@ -383,7 +386,10 @@ export interface Database {
           nome: string | null;
           email: string;
           setor: string | null;
+          /** 4 = administrador (acesso total); 0 = acesso só aos módulos marcados. */
           nivel_acesso: number;
+          modulos: string[];
+          receber_notificacoes: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -995,6 +1001,10 @@ export interface Database {
           status_id: string | null;
           pago: boolean;
           data_pagamento_efetivo: string | null;
+          comprovante_nome: string | null;
+          comprovante_tipo: string | null;
+          comprovante_tamanho: number | null;
+          comprovante_enviado_em: string | null;
           created_at: string;
           updated_at: string;
         };

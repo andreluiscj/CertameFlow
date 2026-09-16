@@ -424,7 +424,7 @@ export default function ContratoDetalhesPage() {
                                       id: p.id,
                                       pago: v,
                                       data_pagamento_efetivo: v
-                                        ? (p.data_pagamento_efetivo ?? new Date().toISOString().slice(0, 10))
+                                        ? (p.data_pagamento_efetivo ?? format(new Date(), 'yyyy-MM-dd'))
                                         : null,
                                     })
                                   }

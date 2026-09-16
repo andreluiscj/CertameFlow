@@ -7,7 +7,7 @@ vi.mock('jose', () => ({
 }));
 
 vi.mock('../src/modulos/usuarios/perfilRepository.js', () => ({
-  buscarNivelAcesso: vi.fn(),
+  buscarAcesso: vi.fn(),
 }));
 
 vi.mock('../src/config/db.js', () => {
@@ -30,8 +30,9 @@ const ID = '08a11b5f-95b3-43d0-af8b-02d66decc626';
 const USUARIO = '5f0c9f55-1111-4b4b-9a9a-0123456789ab';
 const app = criarApp();
 
-function comNivel(nivel, usuario = 'usuario') {
-  perfil.buscarNivelAcesso.mockResolvedValue(nivel);
+/** Token simulado de um usuario com os modulos informados (nivel 4 = administrador). */
+function comAcesso(modulos, { usuario = 'usuario', nivelAcesso = 0 } = {}) {
+  perfil.buscarAcesso.mockResolvedValue({ nivelAcesso, modulos });
   return `Bearer ${usuario}`;
 }
 
@@ -63,20 +64,25 @@ describe('controle de acesso do modulo Provas', () => {
     expect((await request(app).get(rota)).status).toBe(401);
   });
 
-  it.each(LEITURAS)('com nivel 2, %s responde 403 sem consultar o banco', async (rota) => {
-    const resposta = await request(app).get(rota).set('Authorization', comNivel(2));
+  it.each(LEITURAS)('com Contratos e Concursos, mas sem Provas, %s responde 403 sem consultar o banco', async (rota) => {
+    const resposta = await request(app).get(rota).set('Authorization', comAcesso(['contratos', 'concursos']));
     expect(resposta.status).toBe(403);
     expect(pool.query).not.toHaveBeenCalled();
   });
 
-  it.each(LEITURAS)('com nivel 3, %s responde 200', async (rota) => {
-    expect((await request(app).get(rota).set('Authorization', comNivel(3))).status).toBe(200);
+  it.each(LEITURAS)('com so o modulo Provas, %s responde 200', async (rota) => {
+    expect((await request(app).get(rota).set('Authorization', comAcesso(['provas']))).status).toBe(200);
   });
 
-  it('importacao tambem exige nivel 3 e nao abre transacao', async () => {
+  it('administrador acessa mesmo sem modulos marcados', async () => {
+    const resposta = await request(app).get('/api/provas/niveis').set('Authorization', comAcesso([], { nivelAcesso: 4 }));
+    expect(resposta.status).toBe(200);
+  });
+
+  it('importacao tambem exige o modulo Provas e nao abre transacao', async () => {
     const resposta = await request(app)
       .post(`/api/provas/concursos/${ID}/importacoes`)
-      .set('Authorization', comNivel(2))
+      .set('Authorization', comAcesso(['contratos', 'concursos']))
       .send({ linhas: [] });
     expect(resposta.status).toBe(403);
     expect(emTransacao).not.toHaveBeenCalled();
@@ -91,20 +97,20 @@ describe('rotas do modulo Provas', () => {
       ['get', '/api/provas/concursos/abc/provas'],
       ['put', '/api/provas/encerramentos/abc'],
     ]) {
-      const resposta = await request(app)[metodo](rota).set('Authorization', comNivel(3)).send({});
+      const resposta = await request(app)[metodo](rota).set('Authorization', comAcesso(['provas'])).send({});
       expect(resposta.status, rota).toBe(400);
     }
   });
 
   it('prova inexistente responde 404', async () => {
-    const resposta = await request(app).get(`/api/provas/cadastros/${ID}`).set('Authorization', comNivel(3));
+    const resposta = await request(app).get(`/api/provas/cadastros/${ID}`).set('Authorization', comAcesso(['provas']));
     expect(resposta.status).toBe(404);
   });
 
   it('nivel sem descricao responde 400', async () => {
     const resposta = await request(app)
       .post('/api/provas/niveis')
-      .set('Authorization', comNivel(3))
+      .set('Authorization', comAcesso(['provas']))
       .send({ valor_questao: 10 });
     expect(resposta.status).toBe(400);
     expect(resposta.body.campos).toHaveProperty('descricao');
@@ -114,7 +120,7 @@ describe('rotas do modulo Provas', () => {
     pool.query.mockResolvedValue({ rows: [{ id: ID }], rowCount: 1 });
     await request(app)
       .post('/api/provas/niveis')
-      .set('Authorization', comNivel(3))
+      .set('Authorization', comAcesso(['provas']))
       .send({ descricao: 'Superior', codigo: 999, id: 'forjado' });
 
     const [sql, valores] = pool.query.mock.calls.at(-1);
@@ -126,7 +132,7 @@ describe('rotas do modulo Provas', () => {
     const atividades = await import('../src/modulos/logs/atividades.repository.js');
     const resposta = await request(app)
       .post('/api/provas/certificados')
-      .set('Authorization', comNivel(3, USUARIO))
+      .set('Authorization', comAcesso(['provas'], { usuario: USUARIO }))
       .send({
         elaborador_id: ID,
         elaborador_nome: 'Fulano',
@@ -150,19 +156,19 @@ describe('rotas do modulo Provas', () => {
   it('adiciona e remove elaborador de uma area', async () => {
     const adicionar = await request(app)
       .post(`/api/provas/areas/${ID}/elaboradores`)
-      .set('Authorization', comNivel(3))
+      .set('Authorization', comAcesso(['provas']))
       .send({ elaborador_id: USUARIO });
     expect(adicionar.status).toBe(204);
     expect(pool.query.mock.calls.at(-1)[1]).toEqual([USUARIO, ID]);
 
     const remover = await request(app)
       .delete(`/api/provas/areas/${ID}/elaboradores/${USUARIO}`)
-      .set('Authorization', comNivel(3));
+      .set('Authorization', comAcesso(['provas']));
     expect(remover.status).toBe(204);
 
     const invalido = await request(app)
       .post(`/api/provas/areas/${ID}/elaboradores`)
-      .set('Authorization', comNivel(3))
+      .set('Authorization', comAcesso(['provas']))
       .send({ elaborador_id: 'abc' });
     expect(invalido.status).toBe(400);
   });
@@ -170,7 +176,7 @@ describe('rotas do modulo Provas', () => {
   it('elaboradores para RPA recusa lista de ids invalida', async () => {
     const resposta = await request(app)
       .get('/api/provas/elaboradores-rpa?ids=abc')
-      .set('Authorization', comNivel(3));
+      .set('Authorization', comAcesso(['provas']));
     expect(resposta.status).toBe(400);
   });
 });

@@ -1,28 +1,31 @@
 import { useUserProfile } from './useUserProfile';
 
 /**
- * Sistema de níveis de acesso:
- * - Nível 1: acesso apenas ao módulo futuro (placeholder)
- * - Nível 2: nível 1 + módulo Concursos
- * - Nível 3: acesso geral (todos os módulos, incluindo Provas)
+ * Acesso do usuário:
+ * - cada usuário acessa os módulos marcados para ele na Administração, em
+ *   qualquer combinação;
+ * - o nível 4 (administrador) acessa todos os módulos e a Administração.
  *
- * Regra: usuário pode acessar um módulo se seu nivel_acesso >= nível mínimo do módulo.
+ * O frontend usa o acesso só para mostrar ou esconder telas. Quem decide o que
+ * cada usuário pode fazer é a API, que confere o acesso a cada requisição.
  */
 
-export type ModuleKey = 'concursos' | 'provas' | 'contratos';
+export type ModuleKey = 'contratos' | 'concursos' | 'provas';
 
-export const MODULE_MIN_LEVEL: Record<ModuleKey, number> = {
-  contratos: 1,
-  concursos: 2,
-  provas: 3,
-};
+export const MODULOS: { key: ModuleKey; rotulo: string }[] = [
+  { key: 'contratos', rotulo: 'Contratos' },
+  { key: 'concursos', rotulo: 'Concursos' },
+  { key: 'provas', rotulo: 'Provas' },
+];
+
+export const NIVEL_ADMINISTRACAO = 4;
 
 export function useAccessLevel() {
   const { data: profile, isLoading } = useUserProfile();
-  const level = profile?.nivel_acesso ?? 0;
+  const isAdmin = profile?.nivel_acesso === NIVEL_ADMINISTRACAO;
+  const modulos = (profile?.modulos ?? []) as ModuleKey[];
 
-  const canAccess = (module: ModuleKey) => level >= MODULE_MIN_LEVEL[module];
-  const hasAtLeast = (min: number) => level >= min;
+  const canAccess = (module: ModuleKey) => isAdmin || modulos.includes(module);
 
-  return { level, isLoading, canAccess, hasAtLeast };
+  return { isLoading, isAdmin, modulos, canAccess };
 }

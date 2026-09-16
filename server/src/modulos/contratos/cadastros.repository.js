@@ -5,7 +5,8 @@ const COLUNAS = `id, cliente_id, tipo_processo_id, forma_pagamento_id, conta_rec
   status_id, data_vigencia, valor_total, concurso_id, created_at, updated_at`;
 
 const COLUNAS_PARCELA = `id, contrato_id, ordem, percentual, data_pagamento, status_id,
-  pago, data_pagamento_efetivo, created_at, updated_at`;
+  pago, data_pagamento_efetivo, comprovante_nome, comprovante_tipo, comprovante_tamanho,
+  comprovante_enviado_em, created_at, updated_at`;
 
 const COLUNAS_EDITAVEIS_PARCELA = new Set([
   'ordem', 'percentual', 'data_pagamento', 'status_id', 'pago', 'data_pagamento_efetivo',
@@ -30,7 +31,8 @@ const SELECT_COMPLETO = `
          (select to_jsonb(cr) from contrato_conta_recebimento cr where cr.id = k.conta_recebimento_id) as conta_recebimento,
          coalesce(
            (select jsonb_agg(
-                     to_jsonb(p) || jsonb_build_object(
+                     -- o caminho no Storage e interno: o download passa pela API
+                     (to_jsonb(p) - 'comprovante_caminho') || jsonb_build_object(
                        'status', (select jsonb_build_object('id', ps.id, 'descricao', ps.descricao)
                                     from contrato_parcela_status ps where ps.id = p.status_id))
                      order by p.ordem)
@@ -184,4 +186,51 @@ export async function atualizarParcela(id, alteracoes, db = pool) {
 
   const { rows } = await db.query(atualizacao.sql, atualizacao.valores);
   return rows[0] ?? null;
+}
+
+// ----- Comprovante de pagamento da parcela -----
+
+/** Parcela com o caminho do comprovante no Storage, que nao sai nas demais consultas. */
+export async function buscarParcelaComComprovante(id, db = pool) {
+  const { rows } = await db.query(
+    `select ${COLUNAS_PARCELA}, comprovante_caminho from contrato_parcelas where id = $1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Grava (ou limpa, com arquivo null) o comprovante da parcela. Devolve a
+ * parcela e o caminho do arquivo anterior, para o service remove-lo do Storage.
+ */
+export async function substituirComprovante(id, arquivo, db = pool) {
+  const { rows } = await db.query(
+    `with anterior as (
+       select id, comprovante_caminho from contrato_parcelas where id = $1 for update
+     )
+     update contrato_parcelas p
+        set comprovante_caminho = $2, comprovante_nome = $3, comprovante_tipo = $4,
+            comprovante_tamanho = $5, comprovante_enviado_em = $6, updated_at = now()
+       from anterior a
+      where p.id = a.id
+      returning ${COLUNAS_PARCELA.replace(/(\w+)/g, 'p.$1')}, a.comprovante_caminho as caminho_anterior`,
+    [
+      id,
+      arquivo?.caminho ?? null,
+      arquivo?.nome ?? null,
+      arquivo?.tipo ?? null,
+      arquivo?.tamanho ?? null,
+      arquivo ? new Date() : null,
+    ],
+  );
+  return rows[0] ?? null;
+}
+
+/** Caminhos dos comprovantes de um contrato, para limpar o Storage ao excluir. */
+export async function caminhosDosComprovantes(contratoId, db = pool) {
+  const { rows } = await db.query(
+    'select comprovante_caminho from contrato_parcelas where contrato_id = $1 and comprovante_caminho is not null',
+    [contratoId],
+  );
+  return rows.map((r) => r.comprovante_caminho);
 }

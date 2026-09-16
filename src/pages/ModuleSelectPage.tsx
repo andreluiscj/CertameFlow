@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import { FileSignature, FileText, Loader2, Trophy, User, type LucideIcon } from 'lucide-react';
+import { FileSignature, FileText, Loader2, ShieldCheck, Trophy, User, type LucideIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import logoPrincipal from '@/assets/logo-principal.png';
 import { useAuth } from '@/contexts/AuthContext';
@@ -47,7 +48,7 @@ function ModuleSelectPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: profile, isLoading: loadingProfile } = useUserProfile();
-  const { canAccess, isLoading: loadingLevel } = useAccessLevel();
+  const { canAccess, isAdmin, isLoading: loadingLevel } = useAccessLevel();
   const greeting = profile?.nome || user?.email;
   const isLoading = loadingProfile || loadingLevel;
   const visibleModules = MODULES.filter((module) => canAccess(module.key));
@@ -65,7 +66,18 @@ function ModuleSelectPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background to-muted/50 p-4">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background to-muted/50 p-4">
+      {!isLoading && isAdmin && (
+        <Button
+          variant="outline"
+          onClick={() => navigate('/administracao')}
+          className="absolute right-4 top-4 gap-2 bg-card"
+        >
+          <ShieldCheck className="h-4 w-4 text-sky-500" />
+          Administração
+        </Button>
+      )}
+
       <div className="mb-10 flex flex-col items-center gap-3">
         <img src={logoPrincipal} alt="CertameFlow" className="h-auto w-full max-w-2xl" />
         <p className="flex items-center gap-1.5 text-sm text-muted-foreground">

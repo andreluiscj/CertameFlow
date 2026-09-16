@@ -51,7 +51,8 @@ async function requisicao<T>(caminho: string, init?: RequestInit): Promise<T> {
     resposta = await fetch(`${apiUrl}${caminho}`, {
       ...init,
       headers: {
-        'Content-Type': 'application/json',
+        // Com FormData o navegador define o Content-Type (multipart) sozinho.
+        ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
         Authorization: `Bearer ${token}`,
         ...init?.headers,
       },
@@ -110,5 +111,12 @@ export const api = {
   put: <T>(caminho: string, corpo: unknown) =>
     requisicao<T>(caminho, { method: 'PUT', body: JSON.stringify(corpo) }),
 
-  delete: (caminho: string) => requisicao<void>(caminho, { method: 'DELETE' }),
+  /** Envia um arquivo como multipart/form-data no campo informado. */
+  upload: <T>(caminho: string, campo: string, arquivo: File) => {
+    const corpo = new FormData();
+    corpo.append(campo, arquivo);
+    return requisicao<T>(caminho, { method: 'POST', body: corpo });
+  },
+
+  delete: <T = void>(caminho: string) => requisicao<T>(caminho, { method: 'DELETE' }),
 };

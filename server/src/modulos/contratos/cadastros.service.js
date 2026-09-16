@@ -4,6 +4,7 @@ import { lancarSeHouver, naoEncontrado, textosFaltando } from '../../util/valida
 import * as repository from './cadastros.repository.js';
 import * as responsaveis from './responsaveis.repository.js';
 import { registroDeAtividades } from '../logs/atividades.service.js';
+import { removerArquivos } from './comprovantes.service.js';
 
 const atividades = registroDeAtividades('contratos');
 
@@ -162,11 +163,15 @@ export async function atualizarConcurso(id, dados) {
 }
 
 export async function excluir(id) {
-  return atividades.registrando(async (db, registrar) => {
+  const comprovantes = await atividades.registrando(async (db, registrar) => {
     const { contrato, texto } = await descreverContrato(id, db);
+    const caminhos = await repository.caminhosDosComprovantes(id, db);
     if (!contrato || !(await repository.excluir(id, db))) throw naoEncontrado('Contrato', id);
     await registrar('excluiu', `Excluiu o ${texto}.`, doContrato(id));
+    return caminhos;
   });
+  // Os arquivos saem do Storage so depois de a exclusao estar gravada.
+  await removerArquivos(comprovantes);
 }
 
 /** Texto da alteracao de parcela: pagamento, status ou data efetiva. */

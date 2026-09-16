@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-export type ModuloLogs = 'concursos' | 'contratos' | 'provas';
+export type ModuloLogs = 'concursos' | 'contratos' | 'provas' | 'administracao';
 
 export interface LogAtividade {
   id: string;

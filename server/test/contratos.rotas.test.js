@@ -7,7 +7,7 @@ vi.mock('jose', () => ({
 }));
 
 vi.mock('../src/modulos/usuarios/perfilRepository.js', () => ({
-  buscarNivelAcesso: vi.fn(),
+  buscarAcesso: vi.fn(),
 }));
 
 // O banco inteiro e simulado: toda consulta devolve uma lista vazia.
@@ -30,9 +30,10 @@ const { pool, emTransacao } = await import('../src/config/db.js');
 const ID = '08a11b5f-95b3-43d0-af8b-02d66decc626';
 const app = criarApp();
 
-function comNivel(nivel) {
-  perfil.buscarNivelAcesso.mockResolvedValue(nivel);
-  return `Bearer usuario-nivel-${nivel}`;
+/** Token simulado de um usuario com os modulos informados (nivel 4 = administrador). */
+function comAcesso(modulos, nivelAcesso = 0) {
+  perfil.buscarAcesso.mockResolvedValue({ nivelAcesso, modulos });
+  return `Bearer usuario-${modulos.join('-') || 'sem-modulos'}-${nivelAcesso}`;
 }
 
 const LEITURAS = [
@@ -61,21 +62,32 @@ describe('controle de acesso do modulo Contratos', () => {
     expect(resposta.status).toBe(401);
   });
 
-  it.each(LEITURAS)('sem nivel (0), %s responde 403 sem consultar o banco', async (rota) => {
-    const resposta = await request(app).get(rota).set('Authorization', comNivel(0));
+  it.each(LEITURAS)('sem modulos, %s responde 403 sem consultar o banco', async (rota) => {
+    const resposta = await request(app).get(rota).set('Authorization', comAcesso([]));
     expect(resposta.status).toBe(403);
     expect(pool.query).not.toHaveBeenCalled();
   });
 
-  it.each(LEITURAS)('com nivel 1, %s responde 200', async (rota) => {
-    const resposta = await request(app).get(rota).set('Authorization', comNivel(1));
+  it.each(LEITURAS)('com o modulo Contratos, %s responde 200', async (rota) => {
+    const resposta = await request(app).get(rota).set('Authorization', comAcesso(['contratos']));
     expect(resposta.status).toBe(200);
   });
 
-  it('escrita tambem exige o nivel 1', async () => {
+  it.each(LEITURAS)('com Concursos e Provas, mas sem Contratos, %s responde 403', async (rota) => {
+    const resposta = await request(app).get(rota).set('Authorization', comAcesso(['concursos', 'provas']));
+    expect(resposta.status).toBe(403);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('administrador acessa mesmo sem modulos marcados', async () => {
+    const resposta = await request(app).get('/api/contratos/cadastros').set('Authorization', comAcesso([], 4));
+    expect(resposta.status).toBe(200);
+  });
+
+  it('escrita tambem exige o modulo Contratos', async () => {
     const resposta = await request(app)
       .delete(`/api/contratos/cadastros/${ID}`)
-      .set('Authorization', comNivel(0));
+      .set('Authorization', comAcesso([]));
     expect(resposta.status).toBe(403);
     expect(pool.query).not.toHaveBeenCalled();
   });
@@ -85,7 +97,7 @@ describe('rotas do modulo Contratos', () => {
   it('contrato inexistente responde 404', async () => {
     const resposta = await request(app)
       .get(`/api/contratos/cadastros/${ID}`)
-      .set('Authorization', comNivel(1));
+      .set('Authorization', comAcesso(['contratos']));
     expect(resposta.status).toBe(404);
   });
 
@@ -97,7 +109,7 @@ describe('rotas do modulo Contratos', () => {
       '/api/contratos/contas-recebimento/abc',
     ]) {
       const metodo = rota.endsWith('/contratos') || rota.includes('/cadastros/') ? 'get' : 'patch';
-      const resposta = await request(app)[metodo](rota).set('Authorization', comNivel(1)).send({});
+      const resposta = await request(app)[metodo](rota).set('Authorization', comAcesso(['contratos'])).send({});
       expect(resposta.status, rota).toBe(400);
     }
   });
@@ -105,19 +117,19 @@ describe('rotas do modulo Contratos', () => {
   it('desvincular responsavel responde 204 e valida os dois ids', async () => {
     const ok = await request(app)
       .delete(`/api/contratos/cadastros/${ID}/responsaveis/${ID}`)
-      .set('Authorization', comNivel(1));
+      .set('Authorization', comAcesso(['contratos']));
     expect(ok.status).toBe(204);
 
     const invalido = await request(app)
       .delete(`/api/contratos/cadastros/${ID}/responsaveis/abc`)
-      .set('Authorization', comNivel(1));
+      .set('Authorization', comAcesso(['contratos']));
     expect(invalido.status).toBe(400);
   });
 
   it('vincular responsavel em contrato inexistente responde 404', async () => {
     const resposta = await request(app)
       .post(`/api/contratos/cadastros/${ID}/responsaveis`)
-      .set('Authorization', comNivel(1))
+      .set('Authorization', comAcesso(['contratos']))
       .send({ responsavel_id: ID });
     expect(resposta.status).toBe(404);
   });
@@ -125,7 +137,7 @@ describe('rotas do modulo Contratos', () => {
   it('cadastro de contrato invalido responde 400 sem abrir transacao', async () => {
     const resposta = await request(app)
       .post('/api/contratos/cadastros')
-      .set('Authorization', comNivel(1))
+      .set('Authorization', comAcesso(['contratos']))
       .send({ valor_total: 100, parcelas: [] });
     expect(resposta.status).toBe(400);
     expect(resposta.body.campos).toHaveProperty('cliente_id');
@@ -141,7 +153,7 @@ describe('rotas do modulo Contratos', () => {
     );
     const resposta = await request(app)
       .delete(`/api/contratos/clientes/${ID}`)
-      .set('Authorization', comNivel(1));
+      .set('Authorization', comAcesso(['contratos']));
     expect(resposta.status).toBe(409);
     expect(resposta.body.mensagem).not.toContain('contrato_cadastros');
   });
@@ -150,7 +162,7 @@ describe('rotas do modulo Contratos', () => {
     pool.query.mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }));
     const resposta = await request(app)
       .post('/api/contratos/clientes-tipos')
-      .set('Authorization', comNivel(1))
+      .set('Authorization', comAcesso(['contratos']))
       .send({ nome: 'Prefeitura' });
     expect(resposta.status).toBe(409);
   });

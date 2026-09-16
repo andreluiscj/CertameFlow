@@ -1,6 +1,7 @@
 import * as auxiliares from './auxiliares.service.js';
 import * as cadastros from './cadastros.service.js';
 import * as clientes from './clientes.service.js';
+import * as comprovantes from './comprovantes.service.js';
 import * as contas from './contasRecebimento.service.js';
 import * as responsaveis from './responsaveis.service.js';
 
@@ -42,6 +43,10 @@ export const desvincularResponsavelDoContrato = async (req, res) => {
 };
 export const atualizarParcela = async (req, res) =>
   res.json(await cadastros.atualizarParcela(req.params.id, req.body));
+export const enviarComprovante = async (req, res) =>
+  res.json(await comprovantes.enviar(req.params.id, req.file));
+export const linkDoComprovante = async (req, res) => res.json(await comprovantes.gerarLink(req.params.id));
+export const removerComprovante = async (req, res) => res.json(await comprovantes.remover(req.params.id));
 
 // ----- Clientes -----
 export const listarClientes = async (req, res) => res.json(await clientes.listar());

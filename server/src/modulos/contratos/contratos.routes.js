@@ -1,21 +1,23 @@
 import { Router } from 'express';
 import { assincrono } from '../../middleware/assincrono.js';
 import { autenticar } from '../../middleware/autenticacao.js';
-import { exigirNivel } from '../../middleware/autorizacao.js';
+import { exigirModulo } from '../../middleware/autorizacao.js';
+import { receberArquivo } from '../../middleware/receberArquivo.js';
 import { validarUuid } from '../../middleware/validarUuid.js';
 import { rotaDeLogs } from '../logs/atividades.service.js';
+import { TAMANHO_MAXIMO } from './comprovantes.service.js';
 import * as c from './contratos.controller.js';
 
 /**
- * Modulo Contratos: exige nivel de acesso 1 ou superior em todas as rotas.
+ * Modulo Contratos: exige o modulo Contratos em todas as rotas.
  *
- * A autenticacao e o nivel sao aplicados no router principal, antes de montar
+ * A autenticacao e o modulo sao conferidos no router principal, antes de montar
  * os sub-routers, entao valem para tudo o que esta abaixo.
  */
 export const contratosRoutes = Router();
 
 contratosRoutes.use(assincrono(autenticar));
-contratosRoutes.use(exigirNivel(1));
+contratosRoutes.use(exigirModulo('contratos'));
 
 // Um router por recurso. O validarUuid e registrado em cada um porque o
 // router.param do Express nao e herdado pelos sub-routers.
@@ -50,6 +52,9 @@ contratosRoutes.use('/cadastros', cadastros);
 
 const parcelas = recurso();
 parcelas.patch('/:id', assincrono(c.atualizarParcela));
+parcelas.post('/:id/comprovante', receberArquivo('arquivo', TAMANHO_MAXIMO), assincrono(c.enviarComprovante));
+parcelas.get('/:id/comprovante', assincrono(c.linkDoComprovante));
+parcelas.delete('/:id/comprovante', assincrono(c.removerComprovante));
 contratosRoutes.use('/parcelas', parcelas);
 
 // ----- Clientes -----

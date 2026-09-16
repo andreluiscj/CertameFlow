@@ -26,13 +26,18 @@ create table if not exists public.usuarios (
   nome text,
   email text not null,
   setor text,
-  nivel_acesso integer not null default 1,   -- 1 = Contratos, 2 = Concursos, 3 = Provas
+  -- 4 = administrador: todos os módulos e a Administração.
+  -- 0 = usuário comum: acessa só os módulos marcados em "modulos".
+  nivel_acesso integer not null default 0 check (nivel_acesso in (0, 4)),
+  modulos text[] not null default '{}'
+    check (modulos <@ array['contratos', 'concursos', 'provas']),
+  receber_notificacoes boolean not null default true,  -- resumo diário de atrasos por e-mail
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
--- O usuário lê o próprio perfil e só pode alterar nome e setor: o
--- nivel_acesso fica fora do grant para que ninguém se promova sozinho.
+-- O usuário lê o próprio perfil e só pode alterar nome e setor: nível e
+-- módulos ficam fora do grant para que ninguém se dê acesso sozinho.
 grant select on public.usuarios to authenticated;
 grant update (nome, setor) on public.usuarios to authenticated;
 grant all on public.usuarios to service_role;
@@ -55,12 +60,14 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.usuarios (id, nome, email, nivel_acesso)
+  -- Nasce sem acesso: o administrador escolhe os módulos na Administração.
+  insert into public.usuarios (id, nome, email, nivel_acesso, modulos)
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'nome', new.raw_user_meta_data->>'full_name'),
     new.email,
-    1
+    0,
+    '{}'
   )
   on conflict (id) do nothing;
   return new;
@@ -116,6 +123,10 @@ create table if not exists public.concurso_eventos (
   hora time,
   cor text,
   concluido boolean not null default false,
+  -- quem concluiu e quando (limpos ao desmarcar); o nome é copiado no momento
+  concluido_por uuid references public.usuarios(id) on delete set null,
+  concluido_por_nome text,
+  concluido_em timestamptz,
   created_at timestamptz not null default now()
 );
 create index if not exists idx_concurso_eventos_concurso on public.concurso_eventos(concurso_id);
@@ -393,6 +404,12 @@ create table if not exists public.contrato_parcelas (
   status_id uuid references public.contrato_parcela_status(id) on delete set null,
   pago boolean not null default false,
   data_pagamento_efetivo date,
+  -- comprovante de pagamento, guardado no bucket privado "comprovantes"
+  comprovante_caminho text,
+  comprovante_nome text,
+  comprovante_tipo text,
+  comprovante_tamanho integer,
+  comprovante_enviado_em timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (contrato_id, ordem)
@@ -427,7 +444,7 @@ create trigger set_updated_at_contrato_parcelas before update on public.contrato
 -- =====================================================================
 create table if not exists public.logs (
   id uuid primary key default gen_random_uuid(),
-  modulo text not null check (modulo in ('concursos', 'contratos', 'provas')),
+  modulo text not null check (modulo in ('concursos', 'contratos', 'provas', 'administracao')),
   acao text not null,
   descricao text not null,
   entidade text,
@@ -444,86 +461,116 @@ alter table public.logs enable row level security;
 revoke all on public.logs from anon, authenticated;
 grant all on public.logs to service_role;
 
+-- Um registro por dia em que o resumo de atrasos foi enviado por e-mail.
+-- Impede o envio em dobro quando a API é reiniciada no mesmo dia.
+create table if not exists public.notificacoes_envios (
+  data date primary key,
+  destinatarios integer not null default 0,
+  enviado_em timestamptz not null default now()
+);
+
+alter table public.notificacoes_envios enable row level security;
+revoke all on public.notificacoes_envios from anon, authenticated;
+grant all on public.notificacoes_envios to service_role;
+
+-- Bucket privado dos comprovantes de pagamento. Sem policies para
+-- "authenticated": envio e download passam só pela API.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('comprovantes', 'comprovantes', false, 10485760,
+        array['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do nothing;
+
 -- =====================================================================
--- 6) CONTROLE DE ACESSO POR NÍVEL (GRANT + RLS)
---    Níveis cumulativos: 1 = Contratos, 2 = Concursos, 3 = Provas.
---    concurso_cadastros e concurso_eventos são legíveis a partir do nível 1
---    porque o módulo Contratos exibe e vincula concursos.
+-- 6) CONTROLE DE ACESSO POR MÓDULO (GRANT + RLS)
+--    Cada usuário acessa os módulos marcados em usuarios.modulos, em
+--    qualquer combinação. O administrador (nivel_acesso = 4) acessa todos.
+--    concurso_cadastros e concurso_eventos podem ser lidos por quem tem
+--    qualquer módulo, porque Contratos e Provas exibem concursos e tarefas.
 -- =====================================================================
-create or replace function public.nivel_acesso_atual()
-returns integer
+create or replace function public.tem_acesso(modulos_aceitos text[])
+returns boolean
 language sql
 stable
 security definer
 set search_path = public
 as $fn$
-  select coalesce((select u.nivel_acesso from public.usuarios u where u.id = auth.uid()), 0);
+  select coalesce(
+    (select u.nivel_acesso = 4 or u.modulos && modulos_aceitos
+       from public.usuarios u
+      where u.id = auth.uid()),
+    false);
 $fn$;
 
-revoke all on function public.nivel_acesso_atual() from public;
-grant execute on function public.nivel_acesso_atual() to authenticated;
+revoke all on function public.tem_acesso(text[]) from public;
+grant execute on function public.tem_acesso(text[]) to authenticated;
 
 do $$
 declare
   tabela text;
-  nivel integer;
-  nivel_leitura integer;
+  modulo_escrita text;
+  modulos_leitura text[];
 begin
-  for tabela, nivel, nivel_leitura in
+  for tabela, modulo_escrita, modulos_leitura in
     select * from (values
       -- módulo Contratos
-      ('contrato_cliente_tipo',          1, 1),
-      ('contrato_clientes',              1, 1),
-      ('contrato_responsaveis',          1, 1),
-      ('contrato_tipo_processo',         1, 1),
-      ('contrato_status',                1, 1),
-      ('contrato_parcela_status',        1, 1),
-      ('contrato_conta_recebimento',     1, 1),
-      ('contrato_forma_pagamento',       1, 1),
-      ('contrato_cadastros',             1, 1),
-      ('contrato_parcelas',              1, 1),
-      ('contrato_cadastro_responsaveis', 1, 1),
+      ('contrato_cliente_tipo',          'contratos', array['contratos']),
+      ('contrato_clientes',              'contratos', array['contratos']),
+      ('contrato_responsaveis',          'contratos', array['contratos']),
+      ('contrato_tipo_processo',         'contratos', array['contratos']),
+      ('contrato_status',                'contratos', array['contratos']),
+      ('contrato_parcela_status',        'contratos', array['contratos']),
+      ('contrato_conta_recebimento',     'contratos', array['contratos']),
+      ('contrato_forma_pagamento',       'contratos', array['contratos']),
+      ('contrato_cadastros',             'contratos', array['contratos']),
+      ('contrato_parcelas',              'contratos', array['contratos']),
+      ('contrato_cadastro_responsaveis', 'contratos', array['contratos']),
 
-      -- módulo Concursos
-      ('concurso_cadastros',             2, 1),
-      ('concurso_eventos',               2, 1),
-      ('concurso_tipos',                 2, 2),
-      ('concurso_status',                2, 2),
-      ('concurso_observacoes',           2, 2),
-      ('concurso_notas_titulos',         2, 2),
+      -- módulo Concursos (as duas primeiras são lidas pelos outros módulos)
+      ('concurso_cadastros',             'concursos', array['contratos', 'concursos', 'provas']),
+      ('concurso_eventos',               'concursos', array['contratos', 'concursos', 'provas']),
+      ('concurso_tipos',                 'concursos', array['concursos']),
+      ('concurso_status',                'concursos', array['concursos']),
+      ('concurso_observacoes',           'concursos', array['concursos']),
+      ('concurso_notas_titulos',         'concursos', array['concursos']),
 
       -- módulo Provas
-      ('provas_elaboradores_sexo',       3, 3),
-      ('provas_bancos',                  3, 3),
-      ('provas_areas_atuacao',           3, 3),
-      ('provas_elaboradores',            3, 3),
-      ('provas_elaborador_areas',        3, 3),
-      ('provas_niveis',                  3, 3),
-      ('provas_status',                  3, 3),
-      ('provas_cadastro',                3, 3),
-      ('provas_cargos',                  3, 3),
-      ('provas_disciplinas',             3, 3),
-      ('provas_disciplina_niveis',       3, 3),
-      ('provas_concurso_encerramentos',  3, 3)
-    ) as v(tabela, nivel, nivel_leitura)
+      ('provas_elaboradores_sexo',       'provas', array['provas']),
+      ('provas_bancos',                  'provas', array['provas']),
+      ('provas_areas_atuacao',           'provas', array['provas']),
+      ('provas_elaboradores',            'provas', array['provas']),
+      ('provas_elaborador_areas',        'provas', array['provas']),
+      ('provas_niveis',                  'provas', array['provas']),
+      ('provas_status',                  'provas', array['provas']),
+      ('provas_cadastro',                'provas', array['provas']),
+      ('provas_cargos',                  'provas', array['provas']),
+      ('provas_disciplinas',             'provas', array['provas']),
+      ('provas_disciplina_niveis',       'provas', array['provas']),
+      ('provas_concurso_encerramentos',  'provas', array['provas'])
+    ) as v(tabela, modulo_escrita, modulos_leitura)
   loop
     execute format('grant select, insert, update, delete on public.%I to authenticated', tabela);
     execute format('grant all on public.%I to service_role', tabela);
     execute format('revoke all on public.%I from anon', tabela);
     execute format('alter table public.%I enable row level security', tabela);
 
+    -- remove as policies anteriores, para o arquivo poder ser executado de novo
+    execute format('drop policy if exists %I on public.%I', tabela || '_leitura', tabela);
+    execute format('drop policy if exists %I on public.%I', tabela || '_inclusao', tabela);
+    execute format('drop policy if exists %I on public.%I', tabela || '_alteracao', tabela);
+    execute format('drop policy if exists %I on public.%I', tabela || '_exclusao', tabela);
+
     execute format(
-      'create policy %I on public.%I for select to authenticated using (public.nivel_acesso_atual() >= %s)',
-      tabela || '_leitura', tabela, nivel_leitura);
+      'create policy %I on public.%I for select to authenticated using (public.tem_acesso(%L::text[]))',
+      tabela || '_leitura', tabela, modulos_leitura);
     execute format(
-      'create policy %I on public.%I for insert to authenticated with check (public.nivel_acesso_atual() >= %s)',
-      tabela || '_inclusao', tabela, nivel);
+      'create policy %I on public.%I for insert to authenticated with check (public.tem_acesso(array[%L]))',
+      tabela || '_inclusao', tabela, modulo_escrita);
     execute format(
-      'create policy %I on public.%I for update to authenticated using (public.nivel_acesso_atual() >= %s) with check (public.nivel_acesso_atual() >= %s)',
-      tabela || '_alteracao', tabela, nivel, nivel);
+      'create policy %I on public.%I for update to authenticated using (public.tem_acesso(array[%L])) with check (public.tem_acesso(array[%L]))',
+      tabela || '_alteracao', tabela, modulo_escrita, modulo_escrita);
     execute format(
-      'create policy %I on public.%I for delete to authenticated using (public.nivel_acesso_atual() >= %s)',
-      tabela || '_exclusao', tabela, nivel);
+      'create policy %I on public.%I for delete to authenticated using (public.tem_acesso(array[%L]))',
+      tabela || '_exclusao', tabela, modulo_escrita);
   end loop;
 end $$;
 
@@ -582,6 +629,8 @@ on conflict (numero) do nothing;
 -- =====================================================================
 -- FIM. Depois de executar:
 --  1) crie os usuários em Authentication (sem cadastro anônimo);
---  2) ajuste public.usuarios.nivel_acesso (1=Contratos, 2=Concursos, 3=Provas);
+--  2) ajuste public.usuarios.nivel_acesso do primeiro administrador para 4;
+--     os demais usuários e os módulos de cada um são definidos na tela de
+--     Administração;
 --  3) preencha o .env do frontend e o server/.env com os dados do projeto.
 -- =====================================================================

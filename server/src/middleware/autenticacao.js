@@ -1,7 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { executarComUsuario } from '../config/contexto.js';
 import { env } from '../config/env.js';
-import { buscarNivelAcesso } from '../modulos/usuarios/perfilRepository.js';
+import { buscarAcesso } from '../modulos/usuarios/perfilRepository.js';
 
 // Busca e guarda em cache as chaves publicas (JWKS) do Supabase. O jose renova
 // o cache sozinho quando necessario.
@@ -9,7 +9,7 @@ const jwks = createRemoteJWKSet(new URL(env.supabaseJwksUri));
 
 /**
  * Confere a assinatura do token emitido pelo Supabase Auth e, em seguida,
- * consulta o nivel de acesso do usuario no banco. Anexa os dois resultados
+ * consulta o acesso do usuario no banco (nivel e modulos). Anexa o resultado
  * em req.auth para os proximos middlewares e controllers usarem.
  *
  * O login continua sendo feito pelo Supabase: esta funcao nao emite nem
@@ -38,9 +38,9 @@ export async function autenticar(req, res, next) {
 
   // Fora do try de proposito: uma falha do banco aqui e erro do servidor (500),
   // e nao pode ser confundida com token invalido.
-  const nivelAcesso = await buscarNivelAcesso(usuarioId);
+  const { nivelAcesso, modulos } = await buscarAcesso(usuarioId);
 
-  req.auth = { usuarioId, nivelAcesso };
+  req.auth = { usuarioId, nivelAcesso, modulos };
   // O restante da requisicao roda dentro deste contexto, para o registro de
   // atividades saber quem e o usuario.
   executarComUsuario(usuarioId, next);

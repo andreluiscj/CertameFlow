@@ -1,19 +1,19 @@
 import { Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
-import { useAccessLevel, type ModuleKey, MODULE_MIN_LEVEL } from '@/hooks/useAccessLevel';
+import { useAccessLevel, type ModuleKey } from '@/hooks/useAccessLevel';
 
 interface RequireLevelProps {
   children: React.ReactNode;
   module?: ModuleKey;
-  minLevel?: number;
+  adminOnly?: boolean;
 }
 
 /**
- * Bloqueia rotas para usuários sem nível suficiente.
- * Use `module` para validar pelo módulo, ou `minLevel` para nível arbitrário.
+ * Bloqueia rotas para quem não tem acesso.
+ * Use `module` para exigir o módulo, ou `adminOnly` para telas do administrador (nível 4).
  */
-export function RequireLevel({ children, module, minLevel }: RequireLevelProps) {
-  const { level, isLoading, canAccess } = useAccessLevel();
+export function RequireLevel({ children, module, adminOnly = false }: RequireLevelProps) {
+  const { isLoading, isAdmin, canAccess } = useAccessLevel();
 
   if (isLoading) {
     return (
@@ -23,8 +23,7 @@ export function RequireLevel({ children, module, minLevel }: RequireLevelProps) 
     );
   }
 
-  const required = module ? MODULE_MIN_LEVEL[module] : (minLevel ?? 1);
-  const allowed = module ? canAccess(module) : level >= required;
+  const allowed = adminOnly ? isAdmin : module ? canAccess(module) : true;
 
   if (!allowed) {
     return <Navigate to="/" replace />;

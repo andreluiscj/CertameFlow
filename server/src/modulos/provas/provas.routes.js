@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { assincrono } from '../../middleware/assincrono.js';
 import { autenticar } from '../../middleware/autenticacao.js';
-import { exigirNivel } from '../../middleware/autorizacao.js';
+import { exigirModulo } from '../../middleware/autorizacao.js';
 import { validarUuid } from '../../middleware/validarUuid.js';
 import { rotaDeLogs } from '../logs/atividades.service.js';
 import * as c from './provas.controller.js';
 
 /**
- * Modulo Provas: exige nivel de acesso 3 em todas as rotas, para leitura e
+ * Modulo Provas: exige o modulo Provas em todas as rotas, para leitura e
  * escrita, como em supabase/schema.sql.
  *
  * Um unico router (sem sub-routers) para que os router.param abaixo valham
@@ -16,7 +16,7 @@ import * as c from './provas.controller.js';
 export const provasRoutes = Router();
 
 provasRoutes.use(assincrono(autenticar));
-provasRoutes.use(exigirNivel(3));
+provasRoutes.use(exigirModulo('provas'));
 
 provasRoutes.param('id', validarUuid);
 provasRoutes.param('concursoId', validarUuid);

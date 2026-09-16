@@ -168,3 +168,56 @@ export function useUpdateParcela() {
     },
   });
 }
+
+// ===== Comprovante de pagamento da parcela =====
+export const TIPOS_COMPROVANTE = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+export const TAMANHO_MAXIMO_COMPROVANTE = 10 * 1024 * 1024;
+
+export function useEnviarComprovante() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ parcelaId, arquivo }: { parcelaId: string; arquivo: File }) =>
+      api.upload<ContratoParcela>(`/api/contratos/parcelas/${parcelaId}/comprovante`, 'arquivo', arquivo),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contratos'] });
+      qc.invalidateQueries({ queryKey: ['contrato'] });
+      toast.success('Comprovante anexado.');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useRemoverComprovante() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (parcelaId: string) => api.delete<ContratoParcela>(`/api/contratos/parcelas/${parcelaId}/comprovante`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contratos'] });
+      qc.invalidateQueries({ queryKey: ['contrato'] });
+      toast.success('Comprovante removido.');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+/**
+ * Abre o comprovante numa nova aba. A aba é aberta antes da requisição porque
+ * o navegador bloqueia janelas abertas depois de uma espera assíncrona.
+ */
+export async function abrirComprovante(parcelaId: string) {
+  const aba = window.open('', '_blank');
+  try {
+    const { url } = await api.get<{ url: string; nome: string; tipo: string }>(
+      `/api/contratos/parcelas/${parcelaId}/comprovante`,
+    );
+    if (aba) {
+      aba.opener = null;
+      aba.location.href = url;
+    } else {
+      window.open(url, '_blank', 'noopener');
+    }
+  } catch (e) {
+    aba?.close();
+    toast.error((e as Error).message);
+  }
+}
