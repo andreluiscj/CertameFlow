@@ -3,6 +3,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ConclusaoTarefa } from '@/components/concursos/ConclusaoTarefa';
+import { useEventos } from '@/hooks/useEventos';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Pencil } from 'lucide-react';
@@ -18,8 +20,12 @@ interface EventoDetailDialogProps {
 }
 
 export function EventoDetailDialog({
-  open, onOpenChange, evento, onToggleConcluido, onEdit, isUpdating = false,
+  open, onOpenChange, evento: eventoRecebido, onToggleConcluido, onEdit, isUpdating = false,
 }: EventoDetailDialogProps) {
+  // As telas guardam uma cópia da tarefa ao abrir o diálogo. A versão da lista
+  // em cache é atualizada depois de salvar e traz quem concluiu e quando.
+  const { data: eventos } = useEventos({ enabled: open && !!eventoRecebido });
+  const evento = (eventoRecebido && eventos?.find((e) => e.id === eventoRecebido.id)) || eventoRecebido;
   if (!evento) return null;
   const concurso = evento.concurso_cadastros;
 
@@ -45,7 +51,7 @@ export function EventoDetailDialog({
               {evento.hora && ` às ${evento.hora.slice(0, 5)}`}
             </p>
           </div>
-          <div className="flex items-center justify-between rounded-lg border p-3">
+          <div className="space-y-1 rounded-lg border p-3">
             <div className="flex items-center gap-3">
               <Checkbox
                 id="concluido"
@@ -57,6 +63,7 @@ export function EventoDetailDialog({
                 {evento.concluido ? 'Evento concluído' : 'Marcar como concluído'}
               </label>
             </div>
+            <ConclusaoTarefa tarefa={evento} className="pl-7" />
           </div>
           <div className="flex justify-end gap-2">
             {onEdit && (

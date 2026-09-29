@@ -3,7 +3,7 @@ import { Trophy, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { Concurso, EventoComConcurso } from '@/types/database';
 import { useStatusConcurso } from '@/hooks/useOpcoes';
-import { isEventoPausado } from '@/lib/utils';
+import { isEventoAtrasado } from '@/lib/utils';
 
 interface StatsCardsProps {
   concursos: Concurso[];
@@ -18,9 +18,8 @@ export function StatsCards({ concursos, eventos }: StatsCardsProps) {
     const finalizedStatus = statusList.length > 0 ? statusList[statusList.length - 1].nome : 'Finalizado';
     const ativos = concursos.filter(c => c.status !== finalizedStatus).length;
     const pendentes = eventos.filter(e => !e.concluido).length;
-    const hoje = new Date().toISOString().split('T')[0];
-    // Tarefas de concursos pausados nunca contam como atrasadas
-    const atrasadas = eventos.filter(e => !e.concluido && e.data < hoje && !isEventoPausado(e)).length;
+    const hoje = new Date();
+    const atrasadas = eventos.filter(e => isEventoAtrasado(e, hoje)).length;
     const total = eventos.length;
     const concluidas = eventos.filter(e => e.concluido).length;
     const taxa = total > 0 ? Math.round((concluidas / total) * 100) : 0;

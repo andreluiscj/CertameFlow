@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { EventoDetailDialog } from '@/components/concursos/EventoDetailDialog';
+import { ConclusaoTarefa } from '@/components/concursos/ConclusaoTarefa';
 import { ConcursoFilterSelect } from '@/components/concursos/ConcursoFilterSelect';
 import { AddEventoAgendaDialog } from '@/components/concursos/AddEventoAgendaDialog';
 import { DayEventsDialog } from '@/components/concursos/DayEventsDialog';
@@ -384,6 +385,7 @@ export default function AgendaPage() {
                         {evento.hora && (
                           <p className="text-sm text-muted-foreground">{evento.hora.slice(0, 5)}</p>
                         )}
+                        <ConclusaoTarefa tarefa={evento} className="mt-0.5" />
                       </div>
                     </div>
                     <Button

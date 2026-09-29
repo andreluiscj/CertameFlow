@@ -2,6 +2,7 @@ import { format, parseISO, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ConclusaoTarefa } from '@/components/concursos/ConclusaoTarefa';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Pencil } from 'lucide-react';
@@ -80,6 +81,7 @@ export function DayEventsDialog({
                       {evento.concurso_cadastros && (
                         <p className="text-xs text-muted-foreground">{evento.concurso_cadastros.concurso_id} - {evento.concurso_cadastros.cidade}</p>
                       )}
+                      <ConclusaoTarefa tarefa={evento} className="mt-0.5" />
                     </div>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">

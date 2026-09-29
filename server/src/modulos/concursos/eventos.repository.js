@@ -4,8 +4,12 @@ import { montarInsercao } from '../../db/insercaoParcial.js';
 
 /** Tarefas (eventos) dos concursos. */
 
-const COLUNAS = 'id, concurso_id, titulo, data, hora, cor, concluido, created_at';
-const COLUNAS_EDITAVEIS = new Set(['concurso_id', 'titulo', 'data', 'hora', 'cor', 'concluido']);
+const COLUNAS = `id, concurso_id, titulo, data, hora, cor, concluido,
+  concluido_por, concluido_por_nome, concluido_em, created_at`;
+
+// A conclusao fica fora: ela passa por definirConcluidas, que tambem grava quem
+// concluiu e quando.
+const COLUNAS_EDITAVEIS = new Set(['concurso_id', 'titulo', 'data', 'hora', 'cor']);
 
 /**
  * Tarefas com o concurso embutido em concurso_cadastros, como o front recebia.
@@ -13,7 +17,8 @@ const COLUNAS_EDITAVEIS = new Set(['concurso_id', 'titulo', 'data', 'hora', 'cor
  */
 export async function listar(concursoId) {
   const { rows } = await pool.query(
-    `select e.id, e.concurso_id, e.titulo, e.data, e.hora, e.cor, e.concluido, e.created_at,
+    `select e.id, e.concurso_id, e.titulo, e.data, e.hora, e.cor, e.concluido,
+            e.concluido_por, e.concluido_por_nome, e.concluido_em, e.created_at,
             case when c.id is null then null else to_jsonb(c) end as concurso_cadastros
        from concurso_eventos e
        left join concurso_cadastros c on c.id = e.concurso_id
@@ -90,29 +95,42 @@ export async function excluirDoConcurso(concursoId, db) {
 }
 
 /**
- * Marca varias tarefas como concluidas ou nao. Devolve so as que realmente
- * mudaram, para registrar uma atividade por tarefa alterada.
+ * Quem concluiu e quando: preenchidos ao concluir e limpos ao desmarcar. O nome
+ * e copiado de usuarios, como nos logs, para continuar legivel se o usuario
+ * mudar de nome ou for excluido. Usa os aliases t (conclusao) e u (usuario).
  */
-export async function definirConcluidas(alteracoes, db) {
+const AUTORIA_DA_CONCLUSAO = `
+        concluido_em = case when t.concluido then now() end,
+        concluido_por = case when t.concluido then u.id end,
+        concluido_por_nome = case when t.concluido then coalesce(u.nome, u.email) end`;
+
+/**
+ * Marca varias tarefas como concluidas ou nao, registrando o autor. Devolve so
+ * as que realmente mudaram, para registrar uma atividade por tarefa alterada.
+ */
+export async function definirConcluidas(alteracoes, usuarioId, db) {
   const { rows } = await db.query(
     `update concurso_eventos e
-        set concluido = t.concluido
+        set concluido = t.concluido,${AUTORIA_DA_CONCLUSAO}
        from unnest($1::uuid[], $2::boolean[]) as t(id, concluido)
+       left join usuarios u on u.id = $3::uuid
       where e.id = t.id and e.concluido is distinct from t.concluido
      returning e.id, e.concurso_id, e.titulo, e.data, e.concluido`,
-    [alteracoes.map((a) => a.id), alteracoes.map((a) => a.concluido)],
+    [alteracoes.map((a) => a.id), alteracoes.map((a) => a.concluido), usuarioId ?? null],
   );
   return rows;
 }
 
-/** Marca todas as tarefas do concurso; devolve as que mudaram. */
-export async function definirTodasConcluidas(concursoId, concluido, db) {
+/** Marca todas as tarefas do concurso, registrando o autor; devolve as que mudaram. */
+export async function definirTodasConcluidas(concursoId, concluido, usuarioId, db) {
   const { rows } = await db.query(
-    `update concurso_eventos
-        set concluido = $2
-      where concurso_id = $1 and concluido is distinct from $2
-     returning id, concurso_id, titulo, data, concluido`,
-    [concursoId, concluido],
+    `update concurso_eventos e
+        set concluido = t.concluido,${AUTORIA_DA_CONCLUSAO}
+       from (select $2::boolean as concluido) as t
+       left join usuarios u on u.id = $3::uuid
+      where e.concurso_id = $1 and e.concluido is distinct from t.concluido
+     returning e.id, e.concurso_id, e.titulo, e.data, e.concluido`,
+    [concursoId, concluido, usuarioId ?? null],
   );
   return rows;
 }

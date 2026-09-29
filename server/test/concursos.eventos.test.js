@@ -11,6 +11,8 @@ vi.mock('../src/modulos/concursos/eventos.repository.js', () => ({
   buscarPorId: vi.fn(),
   nomeDoConcurso: vi.fn(async () => 'Concurso X'),
   definirConcluidas: vi.fn(),
+  definirTodasConcluidas: vi.fn(),
+  atualizar: vi.fn(),
   todasConcluidas: vi.fn(),
   finalizarConcurso: vi.fn(),
   inserirVarios: vi.fn(),
@@ -48,6 +50,12 @@ describe('conclusao de tarefas', () => {
     const resultado = await comoUsuario(() => service.definirConcluida(TAREFA, { concluido: true }));
 
     expect(resultado.concurso_finalizado).toBeNull();
+    // o autor vai junto para o banco, que grava quem concluiu e quando
+    expect(repository.definirConcluidas).toHaveBeenCalledWith(
+      [{ id: TAREFA, concluido: true }],
+      USUARIO,
+      conexaoDaTransacao,
+    );
     expect(logs.inserir).toHaveBeenCalledWith(conexaoDaTransacao, expect.anything());
     expect(registros()).toEqual([
       expect.objectContaining({
@@ -100,6 +108,43 @@ describe('conclusao de tarefas', () => {
     repository.buscarPorId.mockResolvedValue(null);
 
     await expect(service.definirConcluida(TAREFA, { concluido: true })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('outros caminhos de conclusao tambem gravam o autor', () => {
+  it('salvar varias conclusoes da tela do concurso', async () => {
+    repository.definirConcluidas.mockResolvedValue([{ id: TAREFA, concurso_id: CONCURSO, titulo: 'Edital', concluido: true }]);
+
+    await comoUsuario(() => service.salvarConclusoes({ alteracoes: [{ id: TAREFA, concluido: true }] }));
+
+    expect(repository.definirConcluidas).toHaveBeenCalledWith([{ id: TAREFA, concluido: true }], USUARIO, conexaoDaTransacao);
+  });
+
+  it('concluir todas as tarefas do concurso', async () => {
+    repository.definirTodasConcluidas.mockResolvedValue([]);
+
+    await comoUsuario(() => service.definirTodasConcluidas(CONCURSO, { concluido: true }));
+
+    expect(repository.definirTodasConcluidas).toHaveBeenCalledWith(CONCURSO, true, USUARIO, conexaoDaTransacao);
+  });
+
+  it('PATCH com concluido passa pela conclusao, e nao pelo UPDATE generico', async () => {
+    const antes = { id: TAREFA, concurso_id: CONCURSO, titulo: 'Edital', data: '2026-09-16', hora: null, cor: null, concluido: false };
+    const depois = { ...antes, titulo: 'Edital publicado', concluido: true };
+    repository.buscarPorId.mockResolvedValue(antes);
+    repository.definirConcluidas.mockResolvedValue([depois]);
+    repository.atualizar.mockResolvedValue(depois);
+
+    await comoUsuario(() => service.atualizar(TAREFA, { titulo: 'Edital publicado', concluido: true }));
+
+    expect(repository.definirConcluidas).toHaveBeenCalledWith([{ id: TAREFA, concluido: true }], USUARIO, conexaoDaTransacao);
+    expect(repository.atualizar).toHaveBeenCalledWith(TAREFA, { titulo: 'Edital publicado' }, conexaoDaTransacao);
+    expect(registros().map((r) => r.acao)).toEqual(['concluiu', 'alterou']);
+  });
+
+  it('PATCH com concluido invalido responde 400', async () => {
+    await expect(service.atualizar(TAREFA, { concluido: 'sim' })).rejects.toMatchObject({ status: 400 });
+    expect(repository.definirConcluidas).not.toHaveBeenCalled();
   });
 });
 

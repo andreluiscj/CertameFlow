@@ -7,13 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { format, differenceInDays, parseISO } from 'date-fns';
+import { format, differenceInCalendarDays, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Trash2, Pencil, Search, CheckSquare } from 'lucide-react';
-import { cn, isEventoPausado } from '@/lib/utils';
+import { cn, diasDeAtraso, isEventoPausado } from '@/lib/utils';
 import { toast } from 'sonner';
 import { EditEventoDialog } from '@/components/concursos/EditEventoDialog';
 import { EventoDetailDialog } from '@/components/concursos/EventoDetailDialog';
+import { ConclusaoTarefa } from '@/components/concursos/ConclusaoTarefa';
 import { ConcursoFilterSelect } from '@/components/concursos/ConcursoFilterSelect';
 import type { EventoComConcurso } from '@/types/database';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -28,12 +29,9 @@ const urgenciaConfig = {
 };
 
 function calcularUrgencia(data: string, concluido: boolean): UrgenciaTipo | null {
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const dataEvento = parseISO(data);
-  dataEvento.setHours(0, 0, 0, 0);
-  const diasRestantes = differenceInDays(dataEvento, hoje);
-  if (diasRestantes < 0) return concluido ? null : 'atrasada';
+  // A tarefa vale para o dia inteiro: a de hoje nunca é atrasada, mesmo depois do horário.
+  if (diasDeAtraso(data) > 0) return concluido ? null : 'atrasada';
+  const diasRestantes = differenceInCalendarDays(parseISO(data), new Date());
   if (diasRestantes <= 3) return 'urgente';
   if (diasRestantes <= 7) return 'medio';
   if (diasRestantes <= 15) return 'fraco';
@@ -167,6 +165,7 @@ export default function TarefasPage() {
                   <span className="truncate">{concurso.concurso_id} - {concurso.cidade}</span>
                 </div>
               )}
+              <ConclusaoTarefa tarefa={evento} className="mt-1" />
               <div className="text-xs text-muted-foreground mt-1">
                 {format(parseISO(evento.data), "dd/MM/yyyy (EEEE)", { locale: ptBR })}{evento.hora && evento.hora !== '00:00' ? ` - ${evento.hora.substring(0, 5)}` : ''}
               </div>

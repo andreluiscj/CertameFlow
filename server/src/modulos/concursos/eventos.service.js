@@ -1,3 +1,4 @@
+import { usuarioAtual } from '../../config/contexto.js';
 import { aspas, dataBR } from '../../util/formatacao.js';
 import { validarListaDeIds } from '../../util/uuid.js';
 import { exigirTextos, lancarSeHouver, naoEncontrado } from '../../util/validacao.js';
@@ -39,13 +40,21 @@ export async function criar(dados) {
 
 export async function atualizar(id, alteracoes) {
   if (alteracoes?.titulo !== undefined) exigirTextos(alteracoes, { titulo: 'Informe o título.' });
+  const { concluido, ...outrasAlteracoes } = alteracoes ?? {};
+  if (concluido !== undefined && typeof concluido !== 'boolean') {
+    lancarSeHouver({ concluido: 'Informe se a tarefa está concluída.' });
+  }
+
   return atividades.registrando(async (db, registrar) => {
     const antes = await repository.buscarPorId(id, db);
     if (!antes) throw naoEncontrado('Tarefa', id);
-    const evento = await repository.atualizar(id, alteracoes, db);
+    // A conclusao passa pelo mesmo caminho do checkbox, que grava quem concluiu e quando.
+    const [conclusaoAlterada] =
+      concluido === undefined ? [] : await repository.definirConcluidas([{ id, concluido }], usuarioAtual(), db);
+    const evento = await repository.atualizar(id, outrasAlteracoes, db);
     const concurso = await repository.nomeDoConcurso(evento.concurso_id, db);
 
-    if (antes.concluido !== evento.concluido) {
+    if (conclusaoAlterada) {
       await registrarConclusao(registrar, evento, concurso);
     }
     const outrasMudancas = ['titulo', 'data', 'hora', 'cor'].some((c) => antes[c] !== evento[c]);
@@ -107,7 +116,7 @@ export async function definirConcluida(id, dados) {
   if (typeof dados?.concluido !== 'boolean') lancarSeHouver({ concluido: 'Informe se a tarefa está concluída.' });
 
   return atividades.registrando(async (db, registrar) => {
-    const [evento] = await repository.definirConcluidas([{ id, concluido: dados.concluido }], db);
+    const [evento] = await repository.definirConcluidas([{ id, concluido: dados.concluido }], usuarioAtual(), db);
     const atual = evento ?? (await repository.buscarPorId(id, db));
     if (!atual) throw naoEncontrado('Tarefa', id);
 
@@ -135,7 +144,7 @@ export async function salvarConclusoes(dados) {
   }
 
   return atividades.registrando(async (db, registrar) => {
-    const alteradas = await repository.definirConcluidas(alteracoes, db);
+    const alteradas = await repository.definirConcluidas(alteracoes, usuarioAtual(), db);
     const nomes = new Map();
     for (const evento of alteradas) {
       if (!nomes.has(evento.concurso_id)) {
@@ -152,7 +161,7 @@ export async function definirTodasConcluidas(concursoId, dados) {
   if (typeof dados?.concluido !== 'boolean') lancarSeHouver({ concluido: 'Informe se as tarefas estão concluídas.' });
 
   return atividades.registrando(async (db, registrar) => {
-    const alteradas = await repository.definirTodasConcluidas(concursoId, dados.concluido, db);
+    const alteradas = await repository.definirTodasConcluidas(concursoId, dados.concluido, usuarioAtual(), db);
     const concurso = await repository.nomeDoConcurso(concursoId, db);
     for (const evento of alteradas) {
       await registrarConclusao(registrar, evento, concurso);

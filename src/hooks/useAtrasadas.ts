@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useEventos } from '@/hooks/useEventos';
 import { useContratos, type ContratoCadastro } from '@/hooks/useContratos';
-import { parseISO, differenceInDays, differenceInCalendarDays } from 'date-fns';
-import { isEventoPausado } from '@/lib/utils';
+import { parseISO, differenceInCalendarDays } from 'date-fns';
+import { isEventoAtrasado } from '@/lib/utils';
 
 /** `enabled` evita buscar dados de um módulo que o usuário não pode acessar. */
 export function useAtrasadasCount(enabled = true) {
@@ -10,14 +10,7 @@ export function useAtrasadasCount(enabled = true) {
 
   return useMemo(() => {
     const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    return eventos.filter((e) => {
-      if (e.concluido) return false;
-      if (isEventoPausado(e)) return false;
-      const dataEvento = parseISO(e.data);
-      dataEvento.setHours(0, 0, 0, 0);
-      return differenceInDays(dataEvento, hoje) < 0;
-    }).length;
+    return eventos.filter((e) => isEventoAtrasado(e, hoje)).length;
   }, [eventos]);
 }
 

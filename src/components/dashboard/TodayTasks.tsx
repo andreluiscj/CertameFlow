@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ConclusaoTarefa } from '@/components/concursos/ConclusaoTarefa';
 import { Button } from '@/components/ui/button';
 import { useMarcarEventoConcluido } from '@/hooks/useEventos';
 import { format, parseISO, isToday } from 'date-fns';
@@ -91,6 +92,7 @@ export function TodayTasks({ eventos }: TodayTasksProps) {
                       {evento.concurso_cadastros.concurso_id} - {evento.concurso_cadastros.cidade}/{evento.concurso_cadastros.uf}
                     </p>
                   )}
+                  <ConclusaoTarefa tarefa={evento} className="mt-0.5" />
                 </div>
                 {evento.hora && (
                   <span className="text-xs text-muted-foreground flex-shrink-0">

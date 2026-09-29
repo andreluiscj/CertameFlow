@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatCPF, formatTelefone, maskCPF, maskPIS, maskTelefone, unmask } from "@/lib/masks";
-import { iniciaisDoNome, isEventoPausado, primeiroNome } from "@/lib/utils";
+import { diasDeAtraso, iniciaisDoNome, isEventoAtrasado, isEventoPausado, primeiroNome } from "@/lib/utils";
 
 describe("máscaras de dados", () => {
   it("formata e remove a máscara de CPF", () => {
@@ -29,6 +29,24 @@ describe("máscaras de dados", () => {
   it("identifica evento de concurso pausado", () => {
     expect(isEventoPausado({ concurso_cadastros: { status: "Pausado" } })).toBe(true);
     expect(isEventoPausado({ concurso_cadastros: { status: "Em andamento" } })).toBe(false);
+  });
+
+  it("o prazo da tarefa é o dia inteiro: o atraso conta a partir do dia seguinte", () => {
+    // Datas no horário local, como a tela usa.
+    expect(diasDeAtraso("2026-09-16", new Date(2026, 8, 15, 10))).toBe(0);
+    expect(diasDeAtraso("2026-09-16", new Date(2026, 8, 16, 23, 59))).toBe(0);
+    expect(diasDeAtraso("2026-09-16", new Date(2026, 8, 17, 0, 1))).toBe(1);
+    expect(diasDeAtraso("2026-09-16", new Date(2026, 8, 19, 20))).toBe(3);
+  });
+
+  it("tarefa pendente só fica atrasada depois do seu dia, e nunca com concurso pausado", () => {
+    const tarefa = { data: "2026-09-16", concluido: false };
+    expect(isEventoAtrasado(tarefa, new Date(2026, 8, 16, 23))).toBe(false);
+    expect(isEventoAtrasado(tarefa, new Date(2026, 8, 17, 8))).toBe(true);
+    expect(isEventoAtrasado({ ...tarefa, concluido: true }, new Date(2026, 8, 17, 8))).toBe(false);
+    expect(
+      isEventoAtrasado({ ...tarefa, concurso_cadastros: { status: "Pausado" } }, new Date(2026, 8, 17, 8)),
+    ).toBe(false);
   });
 
   it("monta iniciais do primeiro e último nome para o avatar", () => {

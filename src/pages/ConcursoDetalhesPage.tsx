@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ConclusaoTarefa } from '@/components/concursos/ConclusaoTarefa';
 import {
   Table,
   TableBody,
@@ -311,6 +312,10 @@ export default function ConcursoDetalhesPage() {
                       >
                         {evento.titulo}
                       </span>
+                      <ConclusaoTarefa
+                        tarefa={{ ...evento, concluido: evento.concluido && getEffectiveConcluido(evento.id, evento.concluido) }}
+                        className="mt-0.5"
+                      />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {format(parseISO(evento.data), 'dd/MM/yyyy')}

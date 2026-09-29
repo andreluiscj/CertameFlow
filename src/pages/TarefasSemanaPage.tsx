@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { useEventos, useMarcarEventoConcluido } from '@/hooks/useEventos';
+import { ConclusaoTarefa } from '@/components/concursos/ConclusaoTarefa';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -118,6 +119,7 @@ export default function TarefasSemanaPage() {
                                     </span>
                                   </div>
                                 )}
+                                <ConclusaoTarefa tarefa={evento} className="mt-1" />
                                 {evento.hora && evento.hora !== '00:00' && (
                                   <p className="text-xs text-muted-foreground mt-1">
                                     {evento.hora.substring(0, 5)}
