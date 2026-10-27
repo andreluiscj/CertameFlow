@@ -34,12 +34,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const remaining = SESSION_DURATION - elapsed;
       if (remaining <= 0) {
         localStorage.removeItem(LOGIN_TIME_KEY);
-        supabase.auth.signOut();
+        supabase.auth.signOut({ scope: 'local' }); // prazo vencido: não derruba os outros aparelhos
         return;
       }
       logoutTimer = setTimeout(() => {
         localStorage.removeItem(LOGIN_TIME_KEY);
-        supabase.auth.signOut();
+        supabase.auth.signOut({ scope: 'local' });
       }, remaining);
     };
 

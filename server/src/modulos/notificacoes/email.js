@@ -11,6 +11,8 @@ function obterTransporte() {
     port: env.smtp.porta,
     // 465 usa TLS direto; as demais portas (587) sobem para TLS com STARTTLS.
     secure: env.smtp.porta === 465,
+    // Exige STARTTLS fora da 465: evita downgrade para texto puro (a senha provisoria viaja por aqui).
+    requireTLS: env.smtp.porta !== 465,
     auth: env.smtp.usuario ? { user: env.smtp.usuario, pass: env.smtp.senha } : undefined,
     connectionTimeout: 15_000,
   });
@@ -26,15 +28,13 @@ const ERROS_DE_CONEXAO = new Set(['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'EDNS',
 
 /** Traduz a recusa do servidor de e-mail para uma mensagem que o administrador consiga resolver. */
 export function descreverErroSmtp(erro) {
+  // O detalhe fica so no log do servidor (a mensagem do SMTP pode expor host e usuario).
+  console.error('Falha no SMTP:', erro?.code, erro?.message);
   if (erro?.code === 'EAUTH') {
-    return 'O servidor de e-mail recusou o usuário ou a senha (SMTP_USER e SMTP_PASS no server/.env). '
-      + 'No Gmail, use uma senha de app de 16 letras, e não a senha da conta.';
+    return 'O servidor de e-mail recusou o usuário ou a senha. Confira a configuração de e-mail do servidor.';
   }
-  if (ERROS_DE_CONEXAO.has(erro?.code)) {
-    return `Não foi possível conectar ao servidor de e-mail ${env.smtp.host}:${env.smtp.porta} `
-      + '(confira SMTP_HOST e SMTP_PORT no server/.env).';
-  }
-  return `Falha no servidor de e-mail: ${erro?.message ?? erro}`;
+  if (ERROS_DE_CONEXAO.has(erro?.code)) return 'Falha ao conectar ao servidor de e-mail.';
+  return 'Falha ao enviar o e-mail.';
 }
 
 export async function enviarEmail({ para, assunto, html, texto }) {

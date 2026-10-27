@@ -121,7 +121,7 @@ describe('envio automatico diario', () => {
     email.verificarConexao.mockRejectedValueOnce(senhaRecusada());
     await expect(enviarResumoDoDiaSePreciso(AS_9H)).rejects.toMatchObject({
       status: 502,
-      message: expect.stringContaining('senha de app'),
+      message: expect.stringContaining('recusou o usuário ou a senha'),
     });
     expect(repository.reservarEnvio).not.toHaveBeenCalled();
   });
@@ -146,7 +146,7 @@ describe('envio automatico diario', () => {
 
     const resultado = await enviarResumoDoDiaSePreciso(AS_9H);
 
-    expect(resultado.erro).toContain('Falha no servidor de e-mail: SMTP recusou');
+    expect(resultado.erro).toContain('Falha ao enviar o e-mail.');
     expect(repository.cancelarEnvio).toHaveBeenCalledWith(HOJE);
     expect(repository.concluirEnvio).not.toHaveBeenCalled();
   });
@@ -157,7 +157,7 @@ describe('envio pelo botao "Enviar agora"', () => {
     email.verificarConexao.mockRejectedValueOnce(senhaRecusada());
     await expect(enviarAgora()).rejects.toMatchObject({
       status: 502,
-      message: expect.stringContaining('SMTP_USER e SMTP_PASS'),
+      message: expect.stringContaining('recusou o usuário ou a senha'),
     });
     expect(repository.listarDestinatarios).not.toHaveBeenCalled();
     expect(email.enviarEmail).not.toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe('envio pelo botao "Enviar agora"', () => {
 
   it('servidor inexistente vira mensagem sobre SMTP_HOST', async () => {
     email.verificarConexao.mockRejectedValueOnce(Object.assign(new Error('getaddrinfo ENOTFOUND gmail'), { code: 'EDNS' }));
-    await expect(enviarAgora()).rejects.toThrow(/SMTP_HOST e SMTP_PORT/);
+    await expect(enviarAgora()).rejects.toThrow(/Falha ao conectar ao servidor de e-mail/);
   });
 
   it('com login aceito, envia e devolve o resultado', async () => {

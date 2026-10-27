@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TAMANHO_MINIMO_SENHA } from '@/lib/senha';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,8 +28,8 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (newPassword.length < 6) {
-      toast({ title: 'Erro', description: 'A nova senha deve ter pelo menos 6 caracteres.', variant: 'destructive' });
+    if (newPassword.length < TAMANHO_MINIMO_SENHA) {
+      toast({ title: 'Erro', description: `A nova senha deve ter pelo menos ${TAMANHO_MINIMO_SENHA} caracteres.`, variant: 'destructive' });
       return;
     }
 

@@ -30,12 +30,18 @@ export function ehNaoEncontrado(erro: unknown): boolean {
   return erro instanceof ErroHttp && erro.status === 404;
 }
 
+/** Código do 403 enviado enquanto o usuário ainda usa a senha provisória. */
+const CODIGO_TROCA_DE_SENHA = 'troca_de_senha_obrigatoria';
+
+const MENSAGEM_401 = 'Sua sessão foi encerrada. Entre novamente.';
+
 export const SEM_CONEXAO = 'Não foi possível conectar ao servidor. Verifique se a API está em execução.';
 
 /** Formato de erro devolvido pela API (TratadorDeErros). */
 type ErroApi = {
   mensagem?: string;
   campos?: Record<string, string>;
+  codigo?: string;
 };
 
 async function requisicao<T>(caminho: string, init?: RequestInit): Promise<T> {
@@ -43,7 +49,7 @@ async function requisicao<T>(caminho: string, init?: RequestInit): Promise<T> {
   const token = data.session?.access_token;
 
   if (!token) {
-    throw new ErroHttp(401, 'Sessão expirada. Entre novamente.');
+    throw new ErroHttp(401, MENSAGEM_401);
   }
 
   let resposta: Response;
@@ -63,6 +69,10 @@ async function requisicao<T>(caminho: string, init?: RequestInit): Promise<T> {
   }
 
   if (!resposta.ok) {
+    if (resposta.status === 401) {
+      // Sessão encerrada no servidor (ex.: senha trocada): sai só deste aparelho e volta ao login.
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    }
     throw new ErroHttp(resposta.status, await mensagemDeErro(resposta));
   }
 
@@ -74,11 +84,15 @@ async function requisicao<T>(caminho: string, init?: RequestInit): Promise<T> {
 }
 
 async function mensagemDeErro(resposta: Response): Promise<string> {
-  if (resposta.status === 401) return 'Sessão expirada. Entre novamente.';
-  if (resposta.status === 403) return 'Você não tem permissão para esta operação.';
+  if (resposta.status === 401) return MENSAGEM_401;
 
   try {
     const corpo = (await resposta.json()) as ErroApi;
+    if (resposta.status === 403) {
+      return corpo.codigo === CODIGO_TROCA_DE_SENHA && corpo.mensagem
+        ? corpo.mensagem
+        : 'Você não tem permissão para esta operação.';
+    }
     const campos = corpo.campos ? Object.values(corpo.campos) : [];
     if (campos.length > 0) return campos.join(' ');
     if (corpo.mensagem) return corpo.mensagem;
@@ -86,6 +100,7 @@ async function mensagemDeErro(resposta: Response): Promise<string> {
     // resposta sem corpo JSON
   }
 
+  if (resposta.status === 403) return 'Você não tem permissão para esta operação.';
   return `Falha na requisição (${resposta.status}).`;
 }
 

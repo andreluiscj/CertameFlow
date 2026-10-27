@@ -9,7 +9,6 @@ export interface NovoUsuario {
   nome: string;
   email: string;
   setor: string;
-  senha: string;
   /** 4 = administrador; 0 = acesso só aos módulos marcados. */
   nivel_acesso: number;
   modulos: string[];
@@ -57,10 +56,16 @@ function useAposAlterarUsuarios() {
   };
 }
 
+export interface UsuarioCriado {
+  usuario: UsuarioAdministrado;
+  senha_provisoria: string;
+}
+
 export function useCriarUsuario() {
   const aposAlterar = useAposAlterarUsuarios();
   return useMutation({
-    mutationFn: (dados: NovoUsuario) => api.post<UsuarioAdministrado>('/api/administracao/usuarios', dados),
+    gcTime: 0, // a resposta traz a senha provisória: não fica no cache
+    mutationFn: (dados: NovoUsuario) => api.post<UsuarioCriado>('/api/administracao/usuarios', dados),
     onSuccess: () => {
       aposAlterar();
       toast.success('Usuário cadastrado.');
@@ -79,16 +84,25 @@ export function useAtualizarUsuario() {
   });
 }
 
-export function useRedefinirSenha() {
+export function useGerarSenhaProvisoria() {
   const aposAlterar = useAposAlterarUsuarios();
   return useMutation({
-    mutationFn: ({ id, senha }: { id: string; senha: string }) =>
-      api.put<void>(`/api/administracao/usuarios/${id}/senha`, { senha }),
-    onSuccess: () => {
-      aposAlterar();
-      toast.success('Senha redefinida.');
-    },
+    gcTime: 0, // a resposta traz a senha provisória: não fica no cache
+    mutationFn: (id: string) =>
+      api.post<{ senha_provisoria: string }>(`/api/administracao/usuarios/${id}/senha-provisoria`, {}),
+    onSuccess: aposAlterar,
     onError: avisarErro,
+  });
+}
+
+export function useEnviarSenhaProvisoria() {
+  return useMutation({
+    gcTime: 0, // as variables levam a senha provisória: não ficam no cache
+    mutationFn: ({ id, senha_provisoria }: { id: string; senha_provisoria: string }) =>
+      api.post<void>(`/api/administracao/usuarios/${id}/senha-provisoria/envios`, { senha_provisoria }),
+    onSuccess: () => toast.success('Senha enviada por e-mail.'),
+    // 503 (SMTP não configurado), 409 e 502 trazem o que corrigir: ficam mais tempo na tela.
+    onError: (erro: Error) => toast.error(erro.message, { duration: 10_000 }),
   });
 }
 

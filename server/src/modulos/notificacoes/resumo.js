@@ -1,7 +1,7 @@
 import { temAcesso } from '../../middleware/autorizacao.js';
 import { dataBR } from '../../util/formatacao.js';
 
-const escapar = (texto) =>
+export const escapar = (texto) =>
   String(texto ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

@@ -4,6 +4,13 @@
 
 create extension if not exists "pgcrypto";
 
+-- M1 (ADR 0003): objetos novos no public nao nascem abertos para o PostgREST.
+alter default privileges for role postgres in schema public revoke all on tables from anon, authenticated;
+alter default privileges for role postgres in schema public revoke all on sequences from anon, authenticated;
+alter default privileges for role postgres in schema public revoke execute on functions from anon, authenticated;
+alter default privileges for role postgres revoke execute on functions from public;
+-- Atencao: funcao nova chamada por policy precisa de grant execute explicito para authenticated.
+
 -- ---------------------------------------------------------------------
 -- Função utilitária de updated_at
 -- ---------------------------------------------------------------------
@@ -36,18 +43,16 @@ create table if not exists public.usuarios (
   updated_at timestamptz not null default now()
 );
 
--- O usuário lê o próprio perfil e só pode alterar nome e setor: nível e
--- módulos ficam fora do grant para que ninguém se dê acesso sozinho.
+-- O usuário só lê o próprio perfil; nome, setor, nível e módulos mudam pela API.
+-- revoke all antes (remove também os grants por coluna): os privilégios padrão do Supabase abrem a tabela.
+revoke all on public.usuarios from anon, authenticated;
 grant select on public.usuarios to authenticated;
-grant update (nome, setor) on public.usuarios to authenticated;
 grant all on public.usuarios to service_role;
 revoke all on public.usuarios from anon;
 alter table public.usuarios enable row level security;
 
 create policy "usuarios_select_self" on public.usuarios
   for select to authenticated using (id = auth.uid());
-create policy "usuarios_update_self" on public.usuarios
-  for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 
 create trigger set_updated_at_usuarios before update on public.usuarios
   for each row execute function public.set_updated_at();
@@ -548,7 +553,8 @@ begin
       ('provas_concurso_encerramentos',  'provas', array['provas'])
     ) as v(tabela, modulo_escrita, modulos_leitura)
   loop
-    execute format('grant select, insert, update, delete on public.%I to authenticated', tabela);
+    -- M1 (ADR 0003): o navegador nao le nem grava estas tabelas direto; tudo passa pela API.
+    execute format('revoke all on public.%I from authenticated', tabela);
     execute format('grant all on public.%I to service_role', tabela);
     execute format('revoke all on public.%I from anon', tabela);
     execute format('alter table public.%I enable row level security', tabela);
@@ -575,9 +581,14 @@ begin
 end $$;
 
 grant usage on schema public to authenticated;
-grant usage, select on all sequences in schema public to authenticated;
+revoke all on all sequences in schema public from authenticated, anon;
 grant all on all sequences in schema public to service_role;
 revoke usage on schema public from anon;
+
+-- Funcoes SECURITY DEFINER: so o necessario fica executavel pelo navegador.
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.tem_acesso(text[]) from public, anon;
+grant execute on function public.tem_acesso(text[]) to authenticated;
 
 -- =====================================================================
 -- 7) DADOS INICIAIS (listas de apoio)

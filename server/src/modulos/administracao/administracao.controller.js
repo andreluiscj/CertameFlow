@@ -7,12 +7,16 @@ import * as usuarios from './usuarios.service.js';
  */
 
 // ----- Usuarios -----
+// Respostas com senha_provisoria nao podem ficar em cache.
+const semCache = (res) => res.set('Cache-Control', 'no-store');
 export const listarUsuarios = async (req, res) => res.json(await usuarios.listar());
-export const criarUsuario = async (req, res) => res.status(201).json(await usuarios.criar(req.body));
+export const criarUsuario = async (req, res) => semCache(res).status(201).json(await usuarios.criar(req.body));
 export const atualizarUsuario = async (req, res) =>
   res.json(await usuarios.atualizar(req.params.id, req.body, req.auth.usuarioId));
-export const redefinirSenha = async (req, res) => {
-  await usuarios.redefinirSenha(req.params.id, req.body?.senha);
+export const gerarSenhaProvisoria = async (req, res) =>
+  semCache(res).json(await usuarios.gerarSenhaProvisoriaDe(req.params.id, req.auth.usuarioId));
+export const enviarSenhaProvisoria = async (req, res) => {
+  await usuarios.enviarSenhaProvisoria(req.params.id, req.body?.senha_provisoria);
   res.status(204).end();
 };
 export const excluirUsuario = async (req, res) => {

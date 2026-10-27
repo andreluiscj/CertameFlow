@@ -5,6 +5,7 @@ import { exigirModulo } from '../../middleware/autorizacao.js';
 import { receberArquivo } from '../../middleware/receberArquivo.js';
 import { validarUuid } from '../../middleware/validarUuid.js';
 import { rotaDeLogs } from '../logs/atividades.service.js';
+import { limiteSensivel } from '../../middleware/limites.js';
 import { TAMANHO_MAXIMO } from './comprovantes.service.js';
 import * as c from './contratos.controller.js';
 
@@ -52,7 +53,7 @@ contratosRoutes.use('/cadastros', cadastros);
 
 const parcelas = recurso();
 parcelas.patch('/:id', assincrono(c.atualizarParcela));
-parcelas.post('/:id/comprovante', receberArquivo('arquivo', TAMANHO_MAXIMO), assincrono(c.enviarComprovante));
+parcelas.post('/:id/comprovante', limiteSensivel(), receberArquivo('arquivo', TAMANHO_MAXIMO), assincrono(c.enviarComprovante));
 parcelas.get('/:id/comprovante', assincrono(c.linkDoComprovante));
 parcelas.delete('/:id/comprovante', assincrono(c.removerComprovante));
 contratosRoutes.use('/parcelas', parcelas);

@@ -88,6 +88,8 @@ CertameFlow é uma plataforma web que busca **centralizar, organizar e automatiz
 - **SQL Injection:** Prevenido com prepared statements (`$1, $2, ...`)
 - **Auditoria:** Todos as criações, alterações, exclusões e importações são registradas com usuário e timestamp
 - **Token:** Validado contra JWKS do Supabase a cada requisição
+- **Limite de requisições:** 1000 por 15 min por IP (vários usuários do escritório saem pelo mesmo IP) em `/api`; 10 por 15 min por usuário em troca de senha, senha provisória, envio de e-mails e upload de comprovante (resposta 429). Atrás de proxy ou balanceador, defina `TRUST_PROXY` (número de proxies) no `server/.env`; sem isso todos os acessos parecem vir do mesmo IP e o limite geral atinge todos juntos. O contador fica em memória: com mais de uma instância, use um store compartilhado.
+- **Senha:** mínimo de 12 caracteres, máximo de 72.
 
 
 ## Estrutura do projeto

@@ -24,12 +24,11 @@ import { LogsAtividadesContent } from '@/components/logs/LogsAtividadesContent';
 import { useAuth } from '@/contexts/AuthContext';
 import { MODULOS, NIVEL_ADMINISTRACAO, type ModuleKey } from '@/hooks/useAccessLevel';
 import {
-  useAtualizarUsuario, useCriarUsuario, useEnviarNotificacoes, useExcluirUsuario, useRedefinirSenha,
+  useAtualizarUsuario, useCriarUsuario, useEnviarNotificacoes, useExcluirUsuario, useGerarSenhaProvisoria,
   useSituacaoNotificacoes, useUsuarios, type UsuarioAdministrado,
 } from '@/hooks/useAdministracao';
+import { SenhaProvisoriaDialog, type SenhaGerada } from '@/components/SenhaProvisoriaDialog';
 import { cn } from '@/lib/utils';
-
-const TAMANHO_MINIMO_SENHA = 8;
 
 /** Mesmos ícones e cores da tela de seleção de módulos. */
 const ESTILO_MODULO: Record<ModuleKey, { icone: LucideIcon; classe: string }> = {
@@ -86,7 +85,7 @@ function UsuariosTab() {
   const { data: usuarios = [], isLoading } = useUsuarios();
   const criar = useCriarUsuario();
   const atualizar = useAtualizarUsuario();
-  const redefinirSenha = useRedefinirSenha();
+  const gerarSenha = useGerarSenhaProvisoria();
   const excluir = useExcluirUsuario();
 
   const [busca, setBusca] = useState('');
@@ -94,14 +93,13 @@ function UsuariosTab() {
   const [editando, setEditando] = useState<UsuarioAdministrado | null>(null);
   const [senhaDe, setSenhaDe] = useState<UsuarioAdministrado | null>(null);
   const [excluindo, setExcluindo] = useState<UsuarioAdministrado | null>(null);
+  const [senhaGerada, setSenhaGerada] = useState<SenhaGerada | null>(null);
 
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [setor, setSetor] = useState('');
-  const [senha, setSenha] = useState('');
   const [administrador, setAdministrador] = useState(false);
   const [modulos, setModulos] = useState<ModuleKey[]>([]);
-  const [novaSenha, setNovaSenha] = useState('');
 
   const filtrados = useMemo(() => {
     const termo = semAcento(busca.trim());
@@ -111,14 +109,14 @@ function UsuariosTab() {
 
   const abrirNovo = () => {
     setEditando(null);
-    setNome(''); setEmail(''); setSetor(''); setSenha('');
+    setNome(''); setEmail(''); setSetor('');
     setAdministrador(false); setModulos([]);
     setDialogAberto(true);
   };
 
   const abrirEdicao = (u: UsuarioAdministrado) => {
     setEditando(u);
-    setNome(u.nome ?? ''); setEmail(u.email); setSetor(u.setor ?? ''); setSenha('');
+    setNome(u.nome ?? ''); setEmail(u.email); setSetor(u.setor ?? '');
     setAdministrador(u.nivel_acesso === NIVEL_ADMINISTRACAO);
     setModulos(TODOS_OS_MODULOS.filter((m) => u.modulos?.includes(m)));
     setDialogAberto(true);
@@ -130,7 +128,7 @@ function UsuariosTab() {
   const editandoASiMesmo = editando?.id === user?.id;
   const podeSalvar = editando
     ? nome.trim().length > 0
-    : nome.trim().length > 0 && email.trim().length > 0 && senha.length >= TAMANHO_MINIMO_SENHA;
+    : nome.trim().length > 0 && email.trim().length > 0;
 
   const salvar = async () => {
     if (!podeSalvar) return;
@@ -142,14 +140,20 @@ function UsuariosTab() {
     if (editando) {
       await atualizar.mutateAsync({ id: editando.id, nome: nome.trim(), setor: setor.trim(), ...acesso });
     } else {
-      await criar.mutateAsync({ nome: nome.trim(), email: email.trim(), setor: setor.trim(), senha, ...acesso });
+      const { usuario, senha_provisoria } = await criar.mutateAsync({
+        nome: nome.trim(), email: email.trim(), setor: setor.trim(), ...acesso,
+      });
+      setSenhaGerada({ usuarioId: usuario.id, nome: usuario.nome || usuario.email, senha: senha_provisoria });
+      criar.reset(); // apaga a senha do estado da mutation
     }
     setDialogAberto(false);
   };
 
   const salvarSenha = async () => {
-    if (!senhaDe || novaSenha.length < TAMANHO_MINIMO_SENHA) return;
-    await redefinirSenha.mutateAsync({ id: senhaDe.id, senha: novaSenha });
+    if (!senhaDe) return;
+    const { senha_provisoria } = await gerarSenha.mutateAsync(senhaDe.id);
+    setSenhaGerada({ usuarioId: senhaDe.id, nome: senhaDe.nome || senhaDe.email, senha: senha_provisoria });
+    gerarSenha.reset();
     setSenhaDe(null);
   };
 
@@ -213,7 +217,14 @@ function UsuariosTab() {
                         <Button size="icon" variant="ghost" onClick={() => abrirEdicao(u)} title="Editar">
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" onClick={() => { setNovaSenha(''); setSenhaDe(u); }} title="Redefinir senha">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setSenhaDe(u)}
+                          disabled={souEu}
+                          title={souEu ? 'Para trocar a sua senha, use Alterar senha no menu do perfil' : 'Redefinir senha'}
+                          aria-label={`Redefinir senha de ${u.nome || u.email}`}
+                        >
                           <KeyRound className="h-4 w-4" />
                         </Button>
                         <Button
@@ -242,7 +253,7 @@ function UsuariosTab() {
             <DialogTitle>{editando ? 'Editar usuário' : 'Novo usuário'}</DialogTitle>
             {!editando && (
               <DialogDescription>
-                O usuário entra com o e-mail e a senha definidos aqui e pode trocar a senha depois, pelo menu do perfil.
+                O sistema gera uma senha provisória, que aparece depois de salvar. No primeiro acesso, o usuário define a própria senha.
               </DialogDescription>
             )}
           </DialogHeader>
@@ -266,13 +277,6 @@ function UsuariosTab() {
               <Label htmlFor="usuario-setor">Setor</Label>
               <Input id="usuario-setor" value={setor} onChange={(e) => setSetor(e.target.value)} placeholder="Opcional" />
             </div>
-            {!editando && (
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="usuario-senha">Senha inicial</Label>
-                <Input id="usuario-senha" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" />
-                <p className="text-xs text-muted-foreground">Mínimo de {TAMANHO_MINIMO_SENHA} caracteres.</p>
-              </div>
-            )}
             <div className="space-y-2 sm:col-span-2">
               <Label>Acesso</Label>
               <label
@@ -347,22 +351,21 @@ function UsuariosTab() {
           <DialogHeader>
             <DialogTitle>Redefinir senha</DialogTitle>
             <DialogDescription>
-              Nova senha de <strong>{senhaDe?.nome || senhaDe?.email}</strong>. Informe a senha ao usuário por um canal seguro.
+              Gerar uma senha provisória para <strong>{senhaDe?.nome || senhaDe?.email}</strong>. As sessões abertas desse
+              usuário serão encerradas e ele precisará definir uma nova senha no próximo acesso.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="nova-senha">Nova senha</Label>
-            <Input id="nova-senha" type="password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} autoComplete="new-password" autoFocus />
-            <p className="text-xs text-muted-foreground">Mínimo de {TAMANHO_MINIMO_SENHA} caracteres.</p>
-          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSenhaDe(null)}>Cancelar</Button>
-            <Button onClick={salvarSenha} disabled={novaSenha.length < TAMANHO_MINIMO_SENHA || redefinirSenha.isPending}>
-              Redefinir
+            <Button onClick={salvarSenha} disabled={gerarSenha.isPending}>
+              {gerarSenha.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Gerar senha provisória
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SenhaProvisoriaDialog gerada={senhaGerada} onClose={() => setSenhaGerada(null)} />
 
       <AlertDialog open={!!excluindo} onOpenChange={(o) => !o && setExcluindo(null)}>
         <AlertDialogContent>

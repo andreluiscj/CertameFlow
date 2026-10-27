@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
+import { esquecerSenhaDoLogin, lembrarSenhaDoLogin } from '@/lib/senhaDoLogin';
 import logoPrincipal from '@/assets/logo-principal.png';
 
 const LoginPage = () => {
@@ -21,11 +22,15 @@ const LoginPage = () => {
     setError('');
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    lembrarSenhaDoLogin(password);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
+      lembrarSenhaDoLogin('');
       setError('E-mail ou senha inválidos.');
     } else {
+      // Só quem entrou com senha provisória precisa dela na tela de troca.
+      if (data.user?.app_metadata?.trocar_senha !== true) esquecerSenhaDoLogin();
       navigate('/', { replace: true });
     }
 

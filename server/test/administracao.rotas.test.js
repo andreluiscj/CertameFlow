@@ -3,7 +3,11 @@ import request from 'supertest';
 
 vi.mock('jose', () => ({
   createRemoteJWKSet: () => ({}),
-  jwtVerify: vi.fn(async (token) => ({ payload: { sub: token } })),
+  // Sufixo "|troca" no token simula a marca trocar_senha no app_metadata.
+  jwtVerify: vi.fn(async (token) => {
+    const [sub, marca] = token.split('|');
+    return { payload: { sub, app_metadata: marca ? { trocar_senha: true } : {} } };
+  }),
 }));
 
 vi.mock('../src/modulos/usuarios/perfilRepository.js', () => ({
@@ -24,13 +28,24 @@ vi.mock('../src/modulos/logs/atividades.repository.js', () => ({
 const authAdmin = {
   createUser: vi.fn(),
   updateUserById: vi.fn(),
+  getUserById: vi.fn(),
   deleteUser: vi.fn(),
 };
 vi.mock('../src/config/supabaseAdmin.js', () => ({
   supabaseAdmin: () => ({ auth: { admin: authAdmin } }),
 }));
 
+vi.mock('../src/modulos/notificacoes/email.js', () => ({
+  emailConfigurado: vi.fn(() => true),
+  enviarEmail: vi.fn(),
+  descreverErroSmtp: (e) => `smtp: ${e.message}`,
+}));
+
 const { criarApp } = await import('../src/app.js');
+const email = await import('../src/modulos/notificacoes/email.js');
+const { FORMATO_SENHA_PROVISORIA, gerarSenhaProvisoria } = await import(
+  '../src/modulos/administracao/usuarios.service.js'
+);
 const perfil = await import('../src/modulos/usuarios/perfilRepository.js');
 const { pool } = await import('../src/config/db.js');
 const atividades = await import('../src/modulos/logs/atividades.repository.js');
@@ -100,10 +115,10 @@ describe('cadastro de usuario', () => {
     const resposta = await request(app)
       .post('/api/administracao/usuarios')
       .set('Authorization', ADMIN())
-      .send({ email: 'sem-arroba', nome: '', senha: '123', nivel_acesso: 3, modulos: ['financeiro'] });
+      .send({ email: 'sem-arroba', nome: '', nivel_acesso: 3, modulos: ['financeiro'] });
 
     expect(resposta.status).toBe(400);
-    expect(Object.keys(resposta.body.campos)).toEqual(['email', 'nome', 'senha', 'nivel_acesso', 'modulos']);
+    expect(Object.keys(resposta.body.campos)).toEqual(['email', 'nome', 'nivel_acesso', 'modulos']);
     expect(authAdmin.createUser).not.toHaveBeenCalled();
   });
 
@@ -117,15 +132,16 @@ describe('cadastro de usuario', () => {
       .send({
         email: ' Maria@Exemplo.com ',
         nome: 'Maria Souza',
-        senha: 'senhaforte1',
         nivel_acesso: 0,
         // fora de ordem e repetido: e gravado sem repeticao e na ordem padrao
         modulos: ['provas', 'contratos', 'provas'],
       });
 
     expect(resposta.status).toBe(201);
+    expect(resposta.body.usuario.email).toBe('maria@exemplo.com');
+    expect(resposta.body.senha_provisoria).toMatch(FORMATO_SENHA_PROVISORIA);
     expect(authAdmin.createUser).toHaveBeenCalledWith(
-      expect.objectContaining({ email: 'maria@exemplo.com', password: 'senhaforte1', email_confirm: true }),
+      expect.objectContaining({ email: 'maria@exemplo.com', password: expect.stringMatching(FORMATO_SENHA_PROVISORIA), email_confirm: true, app_metadata: { trocar_senha: true } }),
     );
     const [sql, valores] = pool.query.mock.calls[0];
     expect(sql).toContain('insert into usuarios');
@@ -147,7 +163,7 @@ describe('cadastro de usuario', () => {
     await request(app)
       .post('/api/administracao/usuarios')
       .set('Authorization', ADMIN())
-      .send({ email: 'ana@exemplo.com', nome: 'Ana', senha: 'senhaforte1', nivel_acesso: 4, modulos: [] });
+      .send({ email: 'ana@exemplo.com', nome: 'Ana', nivel_acesso: 4, modulos: [] });
 
     expect(pool.query.mock.calls[0][1].slice(4)).toEqual([4, TODOS_OS_MODULOS]);
     expect(atividades.inserir.mock.calls[0][1].descricao).toContain('como administrador');
@@ -158,7 +174,7 @@ describe('cadastro de usuario', () => {
     const resposta = await request(app)
       .post('/api/administracao/usuarios')
       .set('Authorization', ADMIN())
-      .send({ email: 'maria@exemplo.com', nome: 'Maria', senha: 'senhaforte1', modulos: ['contratos'] });
+      .send({ email: 'maria@exemplo.com', nome: 'Maria', modulos: ['contratos'] });
     expect(resposta.status).toBe(409);
   });
 
@@ -170,7 +186,7 @@ describe('cadastro de usuario', () => {
     const resposta = await request(app)
       .post('/api/administracao/usuarios')
       .set('Authorization', ADMIN())
-      .send({ email: 'maria@exemplo.com', nome: 'Maria', senha: 'senhaforte1', modulos: ['contratos'] });
+      .send({ email: 'maria@exemplo.com', nome: 'Maria', modulos: ['contratos'] });
 
     expect(resposta.status).toBe(500);
     expect(authAdmin.deleteUser).toHaveBeenCalledWith(OUTRO_ID);
@@ -236,12 +252,195 @@ describe('alteracao e exclusao de usuario', () => {
     expect(authAdmin.deleteUser).toHaveBeenCalledWith(OUTRO_ID);
   });
 
-  it('redefinir senha exige pelo menos 8 caracteres', async () => {
+  it('gera senha provisoria nova, com a marca, e nao a grava no log', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [usuario()], rowCount: 1 });
+    authAdmin.updateUserById.mockResolvedValue({ error: null });
+
+    const resposta = await request(app)
+      .post(`/api/administracao/usuarios/${OUTRO_ID}/senha-provisoria`)
+      .set('Authorization', ADMIN());
+
+    expect(resposta.status).toBe(200);
+    expect(resposta.body.senha_provisoria).toMatch(FORMATO_SENHA_PROVISORIA);
+    expect(authAdmin.updateUserById).toHaveBeenCalledWith(OUTRO_ID, {
+      password: resposta.body.senha_provisoria,
+      app_metadata: { trocar_senha: true },
+    });
+    expect(JSON.stringify(atividades.inserir.mock.calls)).not.toContain(resposta.body.senha_provisoria);
+  });
+
+  it('nao gera senha provisoria para o proprio administrador (409) nem para id inexistente (404)', async () => {
+    const proprio = await request(app)
+      .post(`/api/administracao/usuarios/${ADMIN_ID}/senha-provisoria`)
+      .set('Authorization', ADMIN());
+    expect(proprio.status).toBe(409);
+    const inexistente = await request(app)
+      .post(`/api/administracao/usuarios/${OUTRO_ID}/senha-provisoria`)
+      .set('Authorization', ADMIN());
+    expect(inexistente.status).toBe(404);
+    expect(authAdmin.updateUserById).not.toHaveBeenCalled();
+  });
+
+  it('a rota antiga de senha digitada pelo administrador deixou de existir', async () => {
     const resposta = await request(app)
       .put(`/api/administracao/usuarios/${OUTRO_ID}/senha`)
       .set('Authorization', ADMIN())
+      .send({ senha: 'senhaforte1' });
+    expect(resposta.status).toBe(404);
+  });
+});
+
+describe('envio da senha provisoria por e-mail', () => {
+  const SENHA = 'Xk7p-M3qa-9bTz';
+  const url = `/api/administracao/usuarios/${OUTRO_ID}/senha-provisoria/envios`;
+  const authUser = (meta = { trocar_senha: true }) => ({
+    data: { user: { id: OUTRO_ID, email: 'maria@exemplo.com', app_metadata: meta, user_metadata: { nome: 'Maria' } } },
+    error: null,
+  });
+
+  it('envia ao e-mail do Auth com login e senha, e nao registra a senha no log', async () => {
+    authAdmin.getUserById.mockResolvedValue(authUser());
+    const resposta = await request(app)
+      .post(url)
+      .set('Authorization', ADMIN())
+      .send({ senha_provisoria: SENHA, para: 'x@y.com' });
+
+    expect(resposta.status).toBe(204);
+    const envio = email.enviarEmail.mock.calls[0][0];
+    expect(envio.para).toBe('maria@exemplo.com');
+    expect(envio.texto).toContain('Login: maria@exemplo.com');
+    expect(envio.texto).toContain(`Senha provisória: ${SENHA}`);
+    expect(JSON.stringify(atividades.inserir.mock.calls)).not.toContain(SENHA);
+  });
+
+  it('recusa formato invalido (400) sem consultar o Auth', async () => {
+    const resposta = await request(app).post(url).set('Authorization', ADMIN()).send({ senha_provisoria: 'texto livre' });
+    expect(resposta.status).toBe(400);
+    expect(resposta.body.campos.senha_provisoria).toBeDefined();
+    expect(authAdmin.getUserById).not.toHaveBeenCalled();
+  });
+
+  it('sem SMTP responde 503', async () => {
+    email.emailConfigurado.mockReturnValueOnce(false);
+    const resposta = await request(app).post(url).set('Authorization', ADMIN()).send({ senha_provisoria: SENHA });
+    expect(resposta.status).toBe(503);
+    expect(email.enviarEmail).not.toHaveBeenCalled();
+  });
+
+  it('recusa sem a marca trocar_senha (409) e usuario inexistente (404)', async () => {
+    authAdmin.getUserById.mockResolvedValueOnce(authUser({}));
+    const jaTrocou = await request(app).post(url).set('Authorization', ADMIN()).send({ senha_provisoria: SENHA });
+    expect(jaTrocou.status).toBe(409);
+    authAdmin.getUserById.mockResolvedValueOnce({ data: { user: null }, error: null });
+    const inexistente = await request(app).post(url).set('Authorization', ADMIN()).send({ senha_provisoria: SENHA });
+    expect(inexistente.status).toBe(404);
+    expect(email.enviarEmail).not.toHaveBeenCalled();
+  });
+
+  it('falha do SMTP responde 502', async () => {
+    authAdmin.getUserById.mockResolvedValue(authUser());
+    email.enviarEmail.mockRejectedValueOnce(new Error('recusado'));
+    const resposta = await request(app).post(url).set('Authorization', ADMIN()).send({ senha_provisoria: SENHA });
+    expect(resposta.status).toBe(502);
+  });
+});
+
+describe('troca obrigatoria da senha', () => {
+  it('rota com marca e bloqueada com 403 e codigo, antes de consultar o banco', async () => {
+    const resposta = await request(app)
+      .get('/api/administracao/usuarios')
+      .set('Authorization', `Bearer ${ADMIN_ID}|troca`);
+    expect(resposta.status).toBe(403);
+    expect(resposta.body).toEqual({
+      mensagem: 'Defina sua nova senha para continuar.',
+      campos: {},
+      codigo: 'troca_de_senha_obrigatoria',
+    });
+    expect(perfil.buscarAcesso).not.toHaveBeenCalled();
+  });
+
+  it.each(['/api/concursos', '/api/contratos', '/api/provas'])('%s tambem bloqueia quem tem a marca (403)', async (rota) => {
+    const resposta = await request(app).get(rota).set('Authorization', `Bearer ${ADMIN_ID}|troca`);
+    expect(resposta.status).toBe(403);
+    expect(resposta.body.codigo).toBe('troca_de_senha_obrigatoria');
+  });
+
+  it('PUT /api/usuarios/eu/senha e liberada com marca e remove a marca', async () => {
+    perfil.buscarAcesso.mockResolvedValue({ nivelAcesso: 0, modulos: [] });
+    authAdmin.updateUserById.mockResolvedValue({ error: null });
+    const resposta = await request(app)
+      .put('/api/usuarios/eu/senha')
+      .set('Authorization', `Bearer ${OUTRO_ID}|troca`)
+      .send({ senha: 'minhaSenhaNova1' });
+    expect(resposta.status).toBe(204);
+    expect(authAdmin.updateUserById).toHaveBeenCalledWith(OUTRO_ID, {
+      password: 'minhaSenhaNova1',
+      app_metadata: { trocar_senha: null },
+    });
+    expect(JSON.stringify(atividades.inserir.mock.calls)).not.toContain('minhaSenhaNova1');
+  });
+
+  it('sem a marca, a troca e recusada (409) e o Auth nao e chamado', async () => {
+    perfil.buscarAcesso.mockResolvedValue({ nivelAcesso: 0, modulos: [] });
+    const resposta = await request(app)
+      .put('/api/usuarios/eu/senha')
+      .set('Authorization', `Bearer ${OUTRO_ID}`)
+      .send({ senha: 'minhaSenhaNova1' });
+    expect(resposta.status).toBe(409);
+    expect(authAdmin.updateUserById).not.toHaveBeenCalled();
+  });
+
+  it('senha com 11 caracteres e recusada e com 12 e aceita', async () => {
+    perfil.buscarAcesso.mockResolvedValue({ nivelAcesso: 0, modulos: [] });
+    authAdmin.updateUserById.mockResolvedValue({ error: null });
+    const enviar = (senha) =>
+      request(app).put('/api/usuarios/eu/senha').set('Authorization', `Bearer ${OUTRO_ID}|troca`).send({ senha });
+    expect((await enviar('a'.repeat(11))).status).toBe(400);
+    expect((await enviar('a'.repeat(12))).status).toBe(204);
+  });
+
+  it('senha com mais de 72 caracteres responde 400', async () => {
+    perfil.buscarAcesso.mockResolvedValue({ nivelAcesso: 0, modulos: [] });
+    const resposta = await request(app)
+      .put('/api/usuarios/eu/senha')
+      .set('Authorization', `Bearer ${OUTRO_ID}|troca`)
+      .send({ senha: 'a'.repeat(73) });
+    expect(resposta.status).toBe(400);
+  });
+
+  it('respostas com senha provisoria saem com Cache-Control no-store', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [usuario()], rowCount: 1 });
+    authAdmin.updateUserById.mockResolvedValue({ error: null });
+    const resposta = await request(app)
+      .post(`/api/administracao/usuarios/${OUTRO_ID}/senha-provisoria`)
+      .set('Authorization', ADMIN());
+    expect(resposta.headers['cache-control']).toBe('no-store');
+  });
+
+  it('senha nova curta responde 400', async () => {
+    perfil.buscarAcesso.mockResolvedValue({ nivelAcesso: 0, modulos: [] });
+    const resposta = await request(app)
+      .put('/api/usuarios/eu/senha')
+      .set('Authorization', `Bearer ${OUTRO_ID}|troca`)
       .send({ senha: 'curta' });
     expect(resposta.status).toBe(400);
     expect(authAdmin.updateUserById).not.toHaveBeenCalled();
+  });
+});
+
+describe('gerarSenhaProvisoria', () => {
+  it('segue o formato, sem caracteres ambiguos, com maiuscula, minuscula e digito', () => {
+    for (let i = 0; i < 500; i += 1) {
+      const senha = gerarSenhaProvisoria();
+      expect(senha).toMatch(FORMATO_SENHA_PROVISORIA);
+      expect(senha).not.toMatch(/[0OolI1]/);
+      expect(senha).toMatch(/[A-Z]/);
+      expect(senha).toMatch(/[a-z]/);
+      expect(senha).toMatch(/\d/);
+    }
+  });
+
+  it('nao repete senha', () => {
+    expect(new Set(Array.from({ length: 200 }, gerarSenhaProvisoria)).size).toBe(200);
   });
 });

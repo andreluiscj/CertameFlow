@@ -18,6 +18,12 @@ function inteiro(nome, padrao) {
   return Number.isInteger(valor) ? valor : padrao;
 }
 
+function inteiroPositivo(nome, padrao) {
+  const valor = inteiro(nome, padrao);
+  if (valor <= 0) throw new Error(`A variavel de ambiente ${nome} deve ser um inteiro maior que 0 (veja .env.example).`);
+  return valor;
+}
+
 const supabaseIssuerUri = obrigatoria('SUPABASE_ISSUER_URI');
 
 export const env = {
@@ -53,4 +59,9 @@ export const env = {
     // Endereco do frontend, para o link "Abrir o CertameFlow" no e-mail.
     urlSistema: process.env.URL_SISTEMA ?? 'http://localhost:8080',
   },
+
+  // Tempo maximo de uma sessao, em horas, contado da criacao (o plano gratuito do Supabase nao tem time-box).
+  sessaoMaxHoras: inteiroPositivo('SESSAO_MAX_HORAS', 8),
+  // Quantos proxies confiaveis ha na frente da API (0 = nenhum). Define req.ip.
+  proxiesConfiaveis: inteiro('TRUST_PROXY', 0),
 };
