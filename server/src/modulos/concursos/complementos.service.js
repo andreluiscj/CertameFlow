@@ -1,3 +1,5 @@
+import { NIVEL_ADMINISTRADOR } from '../../middleware/autorizacao.js';
+import { ErroHttp } from '../../middleware/tratadorDeErros.js';
 import { aspas } from '../../util/formatacao.js';
 import { FORMATO_UUID } from '../../util/uuid.js';
 import { lancarSeHouver, naoEncontrado } from '../../util/validacao.js';
@@ -44,8 +46,14 @@ export async function criarObservacao(ano, mes, dados) {
   });
 }
 
-export async function excluirObservacao(id) {
+/** So o autor ou um administrador exclui a observacao. */
+export async function excluirObservacao(id, nivelAcesso) {
   return atividades.registrando(async (db, registrar) => {
+    const existente = await repository.buscarObservacao(id, db);
+    if (!existente) throw naoEncontrado('Observação', id);
+    if (existente.usuario_id !== usuarioAtual() && nivelAcesso !== NIVEL_ADMINISTRADOR) {
+      throw new ErroHttp(403, 'Só o autor ou um administrador pode excluir esta observação.');
+    }
     const observacao = await repository.excluirObservacao(id, db);
     if (!observacao) throw naoEncontrado('Observação', id);
     const autor = observacao.usuario_nome ? ` de ${aspas(observacao.usuario_nome)}` : '';

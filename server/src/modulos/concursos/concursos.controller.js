@@ -51,7 +51,7 @@ export const listarObservacoes = async (req, res) =>
 export const criarObservacao = async (req, res) =>
   res.status(201).json(await complementos.criarObservacao(req.params.ano, req.params.mes, req.body));
 export const excluirObservacao = async (req, res) => {
-  await complementos.excluirObservacao(req.params.id);
+  await complementos.excluirObservacao(req.params.id, req.auth.nivelAcesso);
   semConteudo(res);
 };
 export const listarNotas = async (req, res) => res.json(await complementos.listarNotas());

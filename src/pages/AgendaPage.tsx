@@ -3,7 +3,9 @@ import { Layout } from '@/components/layout/Layout';
 import { EditEventoDialog } from '@/components/concursos/EditEventoDialog';
 import { useEventos, useMarcarEventoConcluido, useDeleteEvento } from '@/hooks/useEventos';
 import { useConcursos } from '@/hooks/useConcursos';
-import { useObservacoesDoMes, useAdicionarObservacao, useExcluirObservacao } from '@/hooks/useObservacoes';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAccessLevel } from '@/hooks/useAccessLevel';
+import { useObservacoesDoMes, useAdicionarObservacao, useExcluirObservacao, podeExcluirObservacao } from '@/hooks/useObservacoes';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -61,6 +63,8 @@ export default function AgendaPage() {
 
   const ano = currentDate.getFullYear();
   const mes = currentDate.getMonth() + 1;
+  const { user } = useAuth();
+  const { isAdmin } = useAccessLevel();
   const { data: observacoes = [] } = useObservacoesDoMes(ano, mes);
   const adicionarObservacao = useAdicionarObservacao();
   const excluirObservacao = useExcluirObservacao();
@@ -526,6 +530,7 @@ export default function AgendaPage() {
                             {format(parseISO(obs.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                           </p>
                         </div>
+                        {podeExcluirObservacao(obs, user?.id, isAdmin) && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -536,6 +541,7 @@ export default function AgendaPage() {
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
+                        )}
                       </li>
                     ))}
                   </ul>

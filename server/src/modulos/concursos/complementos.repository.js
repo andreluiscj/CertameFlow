@@ -47,6 +47,11 @@ export async function inserirObservacao(ano, mes, conteudo, usuarioId, db) {
   return rows[0];
 }
 
+export async function buscarObservacao(id, db) {
+  const { rows } = await db.query(`select ${COLUNAS_OBSERVACAO} from concurso_observacoes where id = $1`, [id]);
+  return rows[0] ?? null;
+}
+
 /** Remove o comentario e devolve o que foi removido (ou null). */
 export async function excluirObservacao(id, db) {
   const { rows } = await db.query(

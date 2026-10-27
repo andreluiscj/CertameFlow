@@ -2,6 +2,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { ObservacaoAgenda } from '@/types/database';
 
+/** A API só deixa o autor ou um administrador excluir; aqui só se esconde o botão. */
+export const podeExcluirObservacao = (obs: Pick<ObservacaoAgenda, 'usuario_id'>, usuarioId: string | undefined, isAdmin: boolean) =>
+  isAdmin || (!!usuarioId && obs.usuario_id === usuarioId);
+
 /** Comentários da agenda do mês, do mais antigo para o mais recente. */
 export function useObservacoesDoMes(ano: number, mes: number) {
   return useQuery({

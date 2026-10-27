@@ -267,11 +267,25 @@ describe('observacoes da agenda', () => {
     expect(mesInvalido.status).toBe(400);
   });
 
+  it('outro usuario nao exclui a observacao (403), mas o administrador sim', async () => {
+    const obs = { id: ID, ano: 2026, mes: 9, usuario_id: 'outra-pessoa', usuario_nome: 'Ana' };
+    pool.query.mockResolvedValueOnce({ rows: [obs], rowCount: 1 });
+    const negado = await request(app).delete(`/api/concursos/observacoes/${ID}`).set('Authorization', comAcesso(['concursos']));
+    expect(negado.status).toBe(403);
+    expect(pool.query).toHaveBeenCalledTimes(1);
+
+    pool.query.mockClear();
+    pool.query.mockResolvedValueOnce({ rows: [obs], rowCount: 1 }).mockResolvedValueOnce({ rows: [obs], rowCount: 1 });
+    const admin = await request(app).delete(`/api/concursos/observacoes/${ID}`).set('Authorization', comAcesso(['concursos'], 4));
+    expect(admin.status).toBe(204);
+  });
+
   it('exclui um comentario pelo id e responde 404 quando nao existe', async () => {
-    pool.query.mockResolvedValueOnce({ rows: [{ id: ID, ano: 2026, mes: 9, usuario_nome: 'André' }], rowCount: 1 });
+    const obs = { id: ID, ano: 2026, mes: 9, usuario_id: 'usuario-concursos-0', usuario_nome: 'André' };
+    pool.query.mockResolvedValueOnce({ rows: [obs], rowCount: 1 }).mockResolvedValueOnce({ rows: [obs], rowCount: 1 });
     const excluido = await request(app).delete(`/api/concursos/observacoes/${ID}`).set('Authorization', comAcesso(['concursos']));
     expect(excluido.status).toBe(204);
-    expect(pool.query.mock.calls[0][1]).toEqual([ID]);
+    expect(pool.query.mock.calls[1][0]).toContain('delete from concurso_observacoes');
 
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
     const inexistente = await request(app).delete(`/api/concursos/observacoes/${ID}`).set('Authorization', comAcesso(['concursos']));
