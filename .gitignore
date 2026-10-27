@@ -27,3 +27,10 @@ dist-ssr
 *.sw?
 # configuracao local da ferramenta Serena
 .serena/
+
+# dumps e backups de banco nunca vao para o repositorio
+*.backup
+*.backup.gz
+*.dump
+*.sql.gz
+db_cluster-*
